@@ -1,4 +1,4 @@
-var CACHE = 'gorillas-amc-v11';
+var CACHE = 'gorillas-amc-v12';
 var FILES = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', function (e) {
   // 'reload' skips the browser's HTTP cache, so a fresh upload is what gets stored
