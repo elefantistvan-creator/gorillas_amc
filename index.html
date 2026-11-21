@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#1b1f3a">
+<title>Gorillas — AMC Test Track</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  html,body{margin:0;height:100%;background:#111;overflow:hidden;touch-action:none;
+    -webkit-user-select:none;user-select:none;font-family:system-ui,sans-serif;color:#fff}
+  canvas{display:block;width:100vw;height:100vh}
+  .btn{position:fixed;border:0;color:#fff;font-weight:700;letter-spacing:.05em;
+    background:rgba(20,24,40,.55);border-radius:10px;padding:10px 14px;font-size:14px;
+    -webkit-tap-highlight-color:transparent}
+  #shoot{bottom:22px;width:130px;height:130px;border-radius:50%;font-size:18px;
+    background:radial-gradient(circle at 35% 30%,#ff9a3c,#c2410c 70%);
+    box-shadow:0 0 0 4px rgba(255,255,255,.25)}
+  #shoot.right{right:22px} #shoot.left{left:22px}
+  #shoot.held{background:radial-gradient(circle at 35% 30%,#ffd166,#e85d04 70%);
+    box-shadow:0 0 0 8px rgba(255,209,102,.45)}
+  #top{position:fixed;top:10px;right:10px;display:flex;gap:8px}
+  #top .btn{position:static}
+  #panel{position:fixed;top:56px;right:10px;width:290px;max-height:calc(100vh - 70px);
+    overflow:auto;background:rgba(12,14,26,.92);border-radius:12px;padding:12px 14px;
+    font-size:13px;display:none}
+  #panel.open{display:block}
+  #panel label{display:flex;justify-content:space-between;align-items:center;margin:8px 0;gap:8px}
+  #panel input[type=range]{width:130px}
+  #panel h3{margin:4px 0 8px;font-size:14px;color:#ffd166}
+  #overlay{position:fixed;inset:0;background:rgba(10,12,24,.88);display:flex;
+    flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:20px}
+  #overlay h1{margin:0 0 6px;font-size:28px;color:#ffd166}
+  #overlay p{max-width:520px;opacity:.85;line-height:1.45;margin:6px 0}
+  #overlay .btn{position:static;margin-top:16px;font-size:18px;padding:14px 28px;background:#e85d04}
+  #rotate{position:fixed;inset:0;background:#111;display:none;align-items:center;justify-content:center;font-size:20px}
+  @media (orientation:portrait){ #rotate.need{display:flex} }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<button id="shoot" class="btn right">HOLD</button>
+<div id="top">
+  <button class="btn" id="bNew">NEW TRACK</button>
+  <button class="btn" id="bCal">ZERO</button>
+  <button class="btn" id="bSet">⚙</button>
+</div>
+<div id="panel">
+  <h3>AMC settings</h3>
+  <label>Max tilt (full tension) <span><input type="range" id="sTilt" min="2" max="9" step="0.5"><b id="vTilt"></b></span></label>
+  <label>Max throw speed <span><input type="range" id="sSpeed" min="600" max="1800" step="50"><b id="vSpeed"></b></span></label>
+  <label>Tremble <span><input type="range" id="sTremble" min="0" max="2" step="0.1"><b id="vTremble"></b></span></label>
+  <label>Gravity <span><input type="range" id="sGrav" min="400" max="1600" step="50"><b id="vGrav"></b></span></label>
+  <label>Smoothing <span><input type="range" id="sSmooth" min="0.05" max="1" step="0.05"><b id="vSmooth"></b></span></label>
+  <label>Vibration <input type="checkbox" id="cVib"></label>
+  <label>Invert X <input type="checkbox" id="cInvX"></label>
+  <label>Invert Y <input type="checkbox" id="cInvY"></label>
+  <label>Aim preview <input type="checkbox" id="cPrev"></label>
+  <label>Wind <input type="checkbox" id="cWind"></label>
+  <label>Button on left <input type="checkbox" id="cLeft"></label>
+  <h3>Sensor</h3>
+  <div id="dbg" style="font-family:monospace;font-size:12px;line-height:1.5"></div>
+</div>
+<div id="overlay">
+  <h1>AMC TEST TRACK</h1>
+  <p>Hold the phone in landscape. <b>Press and hold</b> the orange button — that moment is the zero point.
+  Tilt the phone away from zero to pull the slingshot: further = stronger, and it trembles more.
+  <b>Release</b> to throw.</p>
+  <p style="font-size:13px">No motion sensor (PC)? Press anywhere on the track and drag back like a slingshot.</p>
+  <button class="btn" id="bStart">START</button>
+</div>
+<div id="rotate">↻ Turn the phone to landscape</div>
+
+<script>
+'use strict';
+// ---------- settings ----------
+const DEF={tilt:5,speed:1150,tremble:1,grav:900,smooth:0.3,vib:true,invX:false,invY:false,prev:true,wind:true,left:false};
+let S=Object.assign({},DEF);
+try{const j=JSON.parse(localStorage.getItem('amc_settings')||'null'); if(j) Object.assign(S,j);}catch(e){}
+function saveS(){try{localStorage.setItem('amc_settings',JSON.stringify(S));}catch(e){}}
+
+// ---------- canvas / world ----------
+const WW=1600, WH=900;
+const cv=document.getElementById('c'), ctx=cv.getContext('2d');
+let dpr=1, scale=1, offX=0, offY=0, CW=0, CH=0;
+function resize(){
+  dpr=Math.min(2,window.devicePixelRatio||1);
+  CW=window.innerWidth; CH=window.innerHeight;
+  cv.width=Math.round(CW*dpr); cv.height=Math.round(CH*dpr);
+  scale=Math.min(CW/WW,CH/WH); offX=(CW-WW*scale)/2; offY=(CH-WH*scale);
+  bgCache=null;
+}
+window.addEventListener('resize',resize);
+
+// ---------- background (the "realistic" layer) ----------
+let bgCache=null, clouds=[];
+function makeCloudSprite(){
+  const c=document.createElement('canvas'); c.width=320; c.height=140; const g=c.getContext('2d');
+  for(let i=0;i<9;i++){
+    const x=50+Math.random()*220, y=60+Math.random()*30, r=30+Math.random()*40;
+    const gr=g.createRadialGradient(x,y,0,x,y,r);
+    gr.addColorStop(0,'rgba(255,236,220,.55)'); gr.addColorStop(1,'rgba(255,236,220,0)');
+    g.fillStyle=gr; g.beginPath(); g.arc(x,y,r,0,7); g.fill();
+  }
+  return c;
+}
+function initClouds(){ clouds=[]; for(let i=0;i<5;i++) clouds.push({x:Math.random()*WW,y:40+Math.random()*220,s:0.7+Math.random()*0.8,v:6+Math.random()*14,img:makeCloudSprite()}); }
+function buildBg(){
+  const c=document.createElement('canvas'); c.width=cv.width; c.height=cv.height; const g=c.getContext('2d');
+  const sky=g.createLinearGradient(0,0,0,c.height);
+  sky.addColorStop(0,'#1b1f3a'); sky.addColorStop(.45,'#5b3b6e'); sky.addColorStop(.75,'#d9775a'); sky.addColorStop(1,'#f3c38a');
+  g.fillStyle=sky; g.fillRect(0,0,c.width,c.height);
+  // sun glow
+  const sx=c.width*0.72, sy=c.height*0.62, sr=c.height*0.5;
+  let gr=g.createRadialGradient(sx,sy,0,sx,sy,sr);
+  gr.addColorStop(0,'rgba(255,230,170,.95)'); gr.addColorStop(.08,'rgba(255,210,140,.8)');
+  gr.addColorStop(.3,'rgba(255,150,90,.25)'); gr.addColorStop(1,'rgba(255,150,90,0)');
+  g.fillStyle=gr; g.fillRect(0,0,c.width,c.height);
+  // stars
+  g.fillStyle='rgba(255,255,255,.7)';
+  for(let i=0;i<70;i++){ g.globalAlpha=Math.random()*.7; g.fillRect(Math.random()*c.width,Math.random()*c.height*.35,1.5*dpr,1.5*dpr); }
+  g.globalAlpha=1;
+  // hazy distant layers
+  const layers=[['rgba(120,80,120,.45)',.62,.06],['rgba(80,50,90,.6)',.70,.09],['rgba(50,32,62,.8)',.78,.12]];
+  for(const [col,base,amp] of layers){
+    g.fillStyle=col; g.beginPath(); g.moveTo(0,c.height);
+    let x=0; while(x<=c.width){ const h=c.height*(base-Math.random()*amp); g.lineTo(x,h); x+= (8+Math.random()*30)*dpr; g.lineTo(x,h); }
+    g.lineTo(c.width,c.height); g.closePath(); g.fill();
+  }
+  // atmospheric haze at horizon
+  gr=g.createLinearGradient(0,c.height*.6,0,c.height);
+  gr.addColorStop(0,'rgba(243,195,138,0)'); gr.addColorStop(1,'rgba(243,195,138,.35)');
+  g.fillStyle=gr; g.fillRect(0,0,c.width,c.height);
+  bgCache=c;
+}
+
+// ---------- buildings (the "cheap" layer) ----------
+const PAL=['#3aa6a0','#b5473a','#8a8f99','#c9a227','#5d6fb0','#9c5d8a'];
+let blds=[], craters=[], bCanvas=null, bCtx=null;
+let monkey={x:0,y:0}, target={x:0,y:0,alive:true};
+function newTrack(){
+  blds=[]; craters=[];
+  let x=0;
+  while(x<WW){
+    const w=Math.min(WW-x, 80+Math.floor(Math.random()*60));
+    const h=170+Math.floor(Math.random()*380);
+    blds.push({x,y:WH-h,w,h,col:PAL[Math.floor(Math.random()*PAL.length)]}); x+=w+2;
+  }
+  const mb=blds[1], tb=blds[blds.length-2];
+  monkey={x:mb.x+mb.w/2,y:mb.y};
+  target={x:tb.x+tb.w/2,y:tb.y,alive:true};
+  wind = S.wind ? Math.round((Math.random()*2-1)*120) : 0;
+  drawBuildings(); initClouds(); banana=null; parts=[]; trail=[];
+}
+function drawBuildings(){
+  bCanvas=document.createElement('canvas'); bCanvas.width=WW; bCanvas.height=WH; bCtx=bCanvas.getContext('2d');
+  for(const b of blds){
+    bCtx.fillStyle=b.col; bCtx.fillRect(b.x,b.y,b.w,b.h);
+    bCtx.fillStyle='rgba(0,0,0,.18)'; bCtx.fillRect(b.x+b.w-6,b.y,6,b.h);
+    for(let wy=b.y+12; wy<WH-14; wy+=26) for(let wx=b.x+10; wx<b.x+b.w-16; wx+=18){
+      bCtx.fillStyle = Math.random()<.35 ? '#fde68a' : '#2b2b38'; bCtx.fillRect(wx,wy,9,13);
+    }
+  }
+}
+function addCrater(x,y,r){
+  craters.push({x,y,r});
+  bCtx.globalCompositeOperation='destination-out';
+  bCtx.beginPath(); bCtx.arc(x,y,r,0,7); bCtx.fill();
+  bCtx.globalCompositeOperation='source-over';
+}
+function solidAt(x,y){
+  if(y>=WH) return true;
+  let inB=false;
+  for(const b of blds){ if(x>=b.x&&x<b.x+b.w&&y>=b.y){inB=true;break;} }
+  if(!inB) return false;
+  for(const c of craters){ const dx=x-c.x,dy=y-c.y; if(dx*dx+dy*dy<c.r*c.r) return false; }
+  return true;
+}
+
+// ---------- gorilla sprite (blocky, own design) ----------
+function drawApe(x,y,armUp,flash){
+  ctx.save(); ctx.translate(x,y);
+  const c=flash?'#fff':'#6b3f1d', f='#d9a066';
+  ctx.fillStyle=c;
+  ctx.fillRect(-14,-58,28,14);      // head
+  ctx.fillRect(-18,-44,36,28);      // chest
+  ctx.fillRect(-16,-16,12,16); ctx.fillRect(4,-16,12,16); // legs
+  ctx.fillRect(-26,-42,8,22);       // left arm (down)
+  if(armUp){ ctx.fillRect(18,-62,8,22);} else { ctx.fillRect(18,-42,8,22);} // throwing arm
+  ctx.fillStyle=f; ctx.fillRect(-8,-54,16,8); ctx.fillRect(-10,-38,20,14);
+  ctx.fillStyle='#111'; ctx.fillRect(-6,-54,3,3); ctx.fillRect(3,-54,3,3);
+  ctx.restore();
+}
+const HAND={dx:22,dy:-60};
+
+// ---------- motion sensor ----------
+let hasSensor=false, sensorEvents=0, sensorRate=0, lastRateT=0;
+const g={x:0,y:0,z:0}; let ref=null;
+function onMotion(e){
+  const a=e.accelerationIncludingGravity; if(!a||a.x==null) return;
+  hasSensor=true; sensorEvents++;
+  const k=S.smooth;
+  g.x+=(a.x-g.x)*k; g.y+=(a.y-g.y)*k; g.z+=(a.z-g.z)*k;
+}
+function screenAngle(){
+  if(screen.orientation&&typeof screen.orientation.angle==='number') return screen.orientation.angle;
+  return window.orientation||0;
+}
+function toScreen(v){ // device x/y -> screen x(right)/y(up)
+  const a=screenAngle()*Math.PI/180, c=Math.cos(a), s=Math.sin(a);
+  return {x:v.x*c - v.y*s, y:v.x*s + v.y*c};
+}
+
+// ---------- shot state ----------
+let holding=false, holdT0=0, mouseMode=false, mouseRef=null, mouseCur=null;
+let pull={x:0,y:0,t:0,ang:0}; // live aim
+let banana=null, trail=[], parts=[], flashT=0, hitText='', hitT=0, wind=0, log=[];
+const nPh=[Math.random()*6,Math.random()*6,Math.random()*6,Math.random()*6];
+function noise(t,o){ return Math.sin(t*13.1+nPh[o])*.5+Math.sin(t*21.7+nPh[o+1])*.3+Math.sin(t*34.3+nPh[o]*2)*.2; }
+
+function startHold(){
+  if(banana) return;
+  holding=true; holdT0=performance.now();
+  if(hasSensor && !mouseMode){ ref={x:g.x,y:g.y,z:g.z}; }
+  vib(15);
+  shootBtn.classList.add('held');
+}
+function endHold(){
+  if(!holding) return; holding=false; shootBtn.classList.remove('held');
+  if(pull.t<0.05){ pushLog('cancel (no tension)'); return; }
+  const v=pull.t*S.speed, a=pull.ang;
+  banana={x:monkey.x+HAND.dx,y:monkey.y+HAND.dy,vx:Math.cos(a)*v,vy:-Math.sin(a)*v,rot:0,t:0};
+  banana.shot={t:Math.round(pull.t*100),a:Math.round(a*180/Math.PI)};
+  trail=[]; vib(30);
+}
+function computePull(now){
+  let dx=0,dy=0,tension=0,dirx=1,diry=0;
+  if(mouseMode){
+    if(!mouseRef||!mouseCur){ pull.t=0; return; }
+    dx=(mouseCur.x-mouseRef.x)/scale; dy=-(mouseCur.y-mouseRef.y)/scale; // pull vector, y up
+    const m=Math.hypot(dx,dy); tension=Math.min(1,m/mouseFull());
+    if(m>0.001){ dirx=-dx/m; diry=-dy/m; }
+  } else {
+    if(!ref){ pull.t=0; return; }
+    const d=toScreen({x:g.x-ref.x,y:g.y-ref.y});
+    let px=-d.x, py=-d.y;                 // tilt left-side-down / top-toward-you = pull back
+    if(S.invX) px=-px; if(S.invY) py=-py;
+    const m=Math.hypot(px,py); const dead=0.25;
+    tension=Math.min(1,Math.max(0,(m-dead)/(S.tilt-dead)));
+    if(m>0.001){ dirx=-px/m; diry=-py/m; }
+    dx=px; dy=py;
+  }
+  // tremble: grows with tension²
+  const tt=now/1000, tr=S.tremble*tension*tension;
+  const angJ=tr*noise(tt,0)*(7*Math.PI/180);
+  const tenJ=tr*noise(tt,2)*0.03;
+  pull.ang=Math.atan2(diry,dirx)+angJ;
+  pull.t=Math.max(0,Math.min(1,tension+tenJ));
+  pull.raw={dx,dy,tension};
+}
+let lastVib=0;
+function vib(ms){ if(S.vib&&navigator.vibrate){ try{navigator.vibrate(ms);}catch(e){} } }
+
+function pushLog(s){ log.unshift(s); if(log.length>5) log.pop(); }
+
+// ---------- physics ----------
+function step(dt){
+  for(const c of clouds){ c.x+=(c.v+wind*0.15)*dt; if(c.x>WW+200) c.x=-350; if(c.x<-400) c.x=WW+150; }
+  if(banana){
+    const b=banana; b.t+=dt;
+    const sub=4, h=dt/sub;
+    for(let i=0;i<sub&&banana;i++){
+      b.vx+=wind*h; b.vy+=S.grav*h; b.x+=b.vx*h; b.y+=b.vy*h; b.rot+=h*14;
+      if(target.alive && Math.hypot(b.x-target.x,b.y-(target.y-30))<30){
+        boom(b.x,b.y,60,true); target.alive=false; hitText='HIT!'; hitT=1.8;
+        pushLog(`T ${b.shot.t}%  A ${b.shot.a}°  → HIT`); banana=null; break;
+      }
+      if(b.t>0.25 && Math.hypot(b.x-monkey.x,b.y-(monkey.y-30))<26){
+        boom(b.x,b.y,50,true); hitText='OWN GOAL'; hitT=1.8;
+        pushLog(`T ${b.shot.t}%  A ${b.shot.a}°  → self`); banana=null; break;
+      }
+      if(solidAt(b.x,b.y)){
+        boom(b.x,b.y,28,false);
+        const dist=Math.round(Math.abs(b.x-target.x));
+        pushLog(`T ${b.shot.t}%  A ${b.shot.a}°  → ${dist}px from target`); banana=null; break;
+      }
+      if(b.x<-300||b.x>WW+300){ pushLog(`T ${b.shot.t}%  A ${b.shot.a}°  → out`); banana=null; break; }
+    }
+    if(banana){ trail.push({x:b.x,y:b.y}); if(trail.length>28) trail.shift(); }
+  }
+  for(const p of parts){ p.vx*=0.98; p.vy+=600*dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.l-=dt; }
+  parts=parts.filter(p=>p.l>0);
+  if(flashT>0) flashT-=dt; if(hitT>0) hitT-=dt;
+}
+function boom(x,y,r,big){
+  addCrater(x,y,r); flashT=big?0.35:0.18; vib(big?[60,40,90]:40);
+  for(let i=0;i<(big?60:26);i++){
+    const a=Math.random()*Math.PI*2, v=100+Math.random()*(big?520:300);
+    parts.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v-150,l:0.5+Math.random()*0.7,c:Math.random()<.5?'#ffd166':'#ff7b2e'});
+  }
+}
+
+// ---------- render ----------
+function W2S(){ ctx.setTransform(dpr*scale,0,0,dpr*scale,dpr*offX,dpr*offY); }
+function render(now){
+  ctx.setTransform(1,0,0,1,0,0);
+  if(!bgCache) buildBg();
+  ctx.drawImage(bgCache,0,0);
+  W2S();
+  for(const c of clouds){ ctx.drawImage(c.img,c.x,c.y,320*c.s,140*c.s); }
+  ctx.imageSmoothingEnabled=false;
+  ctx.drawImage(bCanvas,0,0);
+  ctx.imageSmoothingEnabled=true;
+
+  // apes
+  const shakeA = holding ? S.tremble*pull.t*pull.t*2.5 : 0;
+  drawApe(monkey.x+(Math.random()-.5)*shakeA, monkey.y, holding, false);
+  if(target.alive) drawApe(target.x,target.y,false,false);
+
+  // slingshot band + preview
+  if(holding && pull.t>0){
+    const hx=monkey.x+HAND.dx, hy=monkey.y+HAND.dy;
+    const L=20+pull.t*110;
+    const px=hx-Math.cos(pull.ang)*L, py=hy+Math.sin(pull.ang)*L;
+    const col=`hsl(${50-pull.t*50},100%,60%)`;
+    ctx.strokeStyle=col; ctx.lineWidth=3+pull.t*3;
+    ctx.beginPath(); ctx.moveTo(hx-6,hy); ctx.lineTo(px,py); ctx.lineTo(hx+6,hy); ctx.stroke();
+    drawBanana(px,py,0);
+    if(S.prev){
+      let x=hx,y=hy,vx=Math.cos(pull.ang)*pull.t*S.speed,vy=-Math.sin(pull.ang)*pull.t*S.speed;
+      ctx.fillStyle='rgba(255,255,255,.75)';
+      for(let i=0;i<70;i++){
+        for(let k=0;k<3;k++){ vx+=wind*0.01; vy+=S.grav*0.01; x+=vx*0.01; y+=vy*0.01; }
+        if(i%2===0){ ctx.globalAlpha=1-i/70; ctx.fillRect(x-2,y-2,4,4); }
+        if(solidAt(x,y)) break;
+      }
+      ctx.globalAlpha=1;
+    }
+  }
+  // trail + banana
+  for(let i=0;i<trail.length;i++){ ctx.globalAlpha=i/trail.length*.6; ctx.fillStyle='#ffe066'; const s=2+i/trail.length*4; ctx.fillRect(trail[i].x-s/2,trail[i].y-s/2,s,s); }
+  ctx.globalAlpha=1;
+  if(banana){
+    drawBanana(banana.x,banana.y,banana.rot);
+    if(banana.y<0){ ctx.fillStyle='#ffd166'; ctx.beginPath(); ctx.moveTo(banana.x,6); ctx.lineTo(banana.x-10,24); ctx.lineTo(banana.x+10,24); ctx.fill(); }
+  }
+  // particles
+  for(const p of parts){ ctx.globalAlpha=Math.max(0,p.l); ctx.fillStyle=p.c; ctx.fillRect(p.x-3,p.y-3,6,6); }
+  ctx.globalAlpha=1;
+  // flash (drawn glow, no shadowBlur)
+  if(flashT>0){ ctx.setTransform(1,0,0,1,0,0); ctx.fillStyle=`rgba(255,240,200,${flashT})`; ctx.fillRect(0,0,cv.width,cv.height); W2S(); }
+  if(hitT>0){ ctx.font='bold 90px system-ui'; ctx.textAlign='center'; ctx.fillStyle=`rgba(255,209,102,${Math.min(1,hitT)})`; ctx.fillText(hitText,WW/2,300); }
+
+  drawHUD();
+}
+function drawBanana(x,y,r){
+  ctx.save(); ctx.translate(x,y); ctx.rotate(r);
+  ctx.strokeStyle='#ffe066'; ctx.lineWidth=6; ctx.lineCap='round';
+  ctx.beginPath(); ctx.arc(0,-6,9,0.3,Math.PI-0.3); ctx.stroke();
+  ctx.restore();
+}
+function drawHUD(){
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  const x=14,y=14;
+  ctx.fillStyle='rgba(12,14,26,.55)'; ctx.fillRect(x,y,250,118);
+  ctx.font='bold 13px system-ui'; ctx.textAlign='left'; ctx.fillStyle='#fff';
+  ctx.fillText('TENSION',x+10,y+22);
+  ctx.fillStyle='rgba(255,255,255,.15)'; ctx.fillRect(x+80,y+11,155,14);
+  ctx.fillStyle=`hsl(${50-pull.t*50},100%,55%)`; ctx.fillRect(x+80,y+11,155*(holding?pull.t:0),14);
+  ctx.fillStyle='#fff';
+  ctx.fillText(`ANGLE  ${holding?Math.round(pull.ang*180/Math.PI)+'°':'—'}`,x+10,y+46);
+  ctx.fillText(`SPEED  ${holding?Math.round(pull.t*S.speed):'—'}`,x+130,y+46);
+  ctx.fillText(`WIND  ${wind>0?'→':wind<0?'←':'·'} ${Math.abs(wind)}`,x+10,y+68);
+  ctx.fillText(mouseMode?'MODE  mouse':(hasSensor?`MODE  motion (${sensorRate} Hz)`:'MODE  waiting for sensor'),x+10,y+90);
+  ctx.font='12px system-ui'; ctx.fillStyle='rgba(255,255,255,.7)';
+  ctx.fillText(mouseMode?`LOCK ${document.pointerLockElement?'ON':'OFF'}   pull ${mouseCur?Math.round(mouseCur.x)+','+Math.round(mouseCur.y):'-'}`:screenAngle()+'° screen',x+10,y+110);
+  // log
+  ctx.font='12px monospace'; ctx.fillStyle='rgba(255,255,255,.85)';
+  log.forEach((l,i)=>ctx.fillText(l,x+4,y+140+i*16));
+}
+
+// ---------- loop ----------
+let last=performance.now();
+function loop(now){
+  const dt=Math.min(0.033,(now-last)/1000); last=now;
+  if(now-lastRateT>1000){ sensorRate=sensorEvents; sensorEvents=0; lastRateT=now; updDbg(); }
+  if(holding){
+    computePull(now);
+    if(now-lastVib>110 && pull.t>0.08){ vib(Math.round(4+40*pull.t*pull.t)); lastVib=now; }
+  } else if(!banana){ pull.t=0; }
+  step(dt); render(now);
+  requestAnimationFrame(loop);
+}
+function updDbg(){
+  const d=ref?toScreen({x:g.x-ref.x,y:g.y-ref.y}):{x:0,y:0};
+  document.getElementById('dbg').innerHTML=
+    `rate: ${sensorRate} Hz<br>g: ${g.x.toFixed(2)} ${g.y.toFixed(2)} ${g.z.toFixed(2)}<br>`+
+    `Δscreen: ${d.x.toFixed(2)} ${d.y.toFixed(2)}<br>tilt ≈ ${Math.round(Math.asin(Math.min(1,Math.hypot(d.x,d.y)/9.81))*180/Math.PI)}°`;
+}
+
+// ---------- input ----------
+const shootBtn=document.getElementById('shoot');
+shootBtn.addEventListener('pointerdown',e=>{ e.preventDefault(); if(mouseMode) return; shootBtn.setPointerCapture(e.pointerId); startHold(); });
+shootBtn.addEventListener('pointerup',e=>{ if(!mouseMode) endHold(); });
+shootBtn.addEventListener('pointercancel',e=>{ if(!mouseMode) endHold(); });
+shootBtn.addEventListener('contextmenu',e=>e.preventDefault());
+// full tension distance: long pull when the mouse is captured, short when it is not (screen edge)
+function mouseFull(){ return document.pointerLockElement ? 260 : 110; }
+// mouse mode: pointer lock -> relative movement, not limited by the screen edge
+cv.addEventListener('mousedown',e=>{
+  if(!mouseMode||banana||holding) return;
+  mouseRef={x:0,y:0}; mouseCur={x:0,y:0}; startHold();
+  try{ const r=cv.requestPointerLock(); if(r&&r.catch) r.catch(()=>{}); }catch(err){}
+});
+document.addEventListener('mousemove',e=>{
+  if(!(mouseMode&&holding&&mouseCur)) return;
+  mouseCur.x+=e.movementX||0; mouseCur.y+=e.movementY||0;
+  const m=Math.hypot(mouseCur.x,mouseCur.y), cap=(mouseFull()+2)*scale; // stop runaway beyond full tension
+  if(m>cap){ mouseCur.x*=cap/m; mouseCur.y*=cap/m; }
+});
+document.addEventListener('mouseup',e=>{
+  if(!mouseMode||!holding) return;
+  endHold(); mouseRef=null;
+  try{ if(document.pointerLockElement) document.exitPointerLock(); }catch(err){}
+});
+
+document.getElementById('bNew').onclick=()=>{ newTrack(); log=[]; };
+document.getElementById('bCal').onclick=()=>{ target.alive=true; if(hasSensor) ref={x:g.x,y:g.y,z:g.z}; };
+document.getElementById('bSet').onclick=()=>document.getElementById('panel').classList.toggle('open');
+
+function bindRange(id,key,fmt){ const el=document.getElementById(id), v=document.getElementById('v'+id.slice(1));
+  el.value=S[key]; v.textContent=fmt(S[key]); el.oninput=()=>{ S[key]=parseFloat(el.value); v.textContent=fmt(S[key]); saveS(); }; }
+function bindChk(id,key,cb){ const el=document.getElementById(id); el.checked=!!S[key]; el.onchange=()=>{ S[key]=el.checked; saveS(); cb&&cb(); }; }
+bindRange('sTilt','tilt',v=>Math.round(Math.asin(Math.min(1,v/9.81))*180/Math.PI)+'°');
+bindRange('sSpeed','speed',v=>v);
+bindRange('sTremble','tremble',v=>v.toFixed(1));
+bindRange('sGrav','grav',v=>v);
+bindRange('sSmooth','smooth',v=>v.toFixed(2));
+bindChk('cVib','vib'); bindChk('cInvX','invX'); bindChk('cInvY','invY'); bindChk('cPrev','prev');
+bindChk('cWind','wind',()=>{ wind=S.wind?Math.round((Math.random()*2-1)*120):0; });
+function placeBtn(){ shootBtn.className='btn '+(S.left?'left':'right'); shootBtn.style.display=mouseMode?'none':''; }
+bindChk('cLeft','left',placeBtn);
+
+document.getElementById('bStart').onclick=async()=>{
+  try{ if(typeof DeviceMotionEvent!=='undefined' && DeviceMotionEvent.requestPermission){ await DeviceMotionEvent.requestPermission(); } }catch(e){}
+  window.addEventListener('devicemotion',onMotion);
+  try{ if(document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen(); }catch(e){}
+  try{ if(screen.orientation&&screen.orientation.lock) await screen.orientation.lock('landscape'); }catch(e){}
+  document.getElementById('overlay').style.display='none';
+  document.getElementById('rotate').classList.add('need');
+  setTimeout(()=>{ if(!hasSensor){ mouseMode=true; placeBtn(); pushLog('no motion sensor → mouse mode'); } },1200);
+};
+
+resize(); newTrack(); placeBtn(); requestAnimationFrame(loop);
+if('serviceWorker' in navigator && location.protocol==='https:'){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
+// expose for testing
+window.__amc={S,g,get ref(){return ref},set ref(v){ref=v},startHold,endHold,get banana(){return banana},pull,setSensor(){hasSensor=true}};
+</script>
+</body>
+</html>
