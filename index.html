@@ -215,8 +215,9 @@ function newTrack(){
     blds.push({x,y:WH-h,w,h,col:PAL[Math.floor(Math.random()*PAL.length)]}); x+=w+2;
   }
   const mb=blds[1], tb=blds[blds.length-2];
-  monkey={x:mb.x+mb.w/2,y:mb.y,alive:true};
-  target={x:tb.x+tb.w/2,y:tb.y,alive:true};
+  monkey={x:mb.x+mb.w/2,y:mb.y,alive:true,hp:100,vy:0};
+  target={x:tb.x+tb.w/2,y:tb.y,alive:true,hp:100,vy:0};
+  floaters=[];
   roundOver=false; turnWait=0; monkey.win=target.win=false;
   wind = S.wind ? Math.round((Math.random()*2-1)*120) : 0;
   theme=THEMES[Math.floor(Math.random()*THEMES.length)]; bgCache=null;
@@ -364,7 +365,9 @@ function toScreen(v){ // device x/y -> screen x(right)/y(up)
 let holding=false, holdT0=0, mouseMode=false, mouseRef=null, mouseCur=null;
 let pull={x:0,y:0,t:0,ang:0}; // live aim
 const gsm={x:0,y:0}; // smoothed gyro pull
-let debris=[], dust=[], corpses=[], shakeT=0, shakeA=0;
+let debris=[], dust=[], corpses=[], shakeT=0, shakeA=0, floaters=[];
+// damage in % of life: direct hit by type; near misses get a share by distance
+const DMG={std:20, drill:20, mini:10, bounce:20, mine:25, atom:50};
 // banana types: id, label, colour, ammo per player per round (-1 = unlimited)
 const BTYPES=[
   {id:'std',   name:'BANANA', col:'#ffd23f', ammo:-1},
@@ -487,8 +490,8 @@ function step(dt){
         break;
       }
       // direct hit on an ape
-      if(foe.alive && Math.hypot(b.x-foe.x,b.y-(foe.y-30))<30){ explode(b,b.x,b.y); break; }
-      if(b.t>0.25 && me.alive && Math.hypot(b.x-me.x,b.y-(me.y-30))<26){ explode(b,b.x,b.y); break; }
+      if(foe.alive && Math.hypot(b.x-foe.x,b.y-(foe.y-30))<30){ explode(b,b.x,b.y,foe); break; }
+      if(b.t>0.25 && me.alive && Math.hypot(b.x-me.x,b.y-(me.y-30))<26){ explode(b,b.x,b.y,me); break; }
       // mines are set off by a banana flying close
       for(const m of mines){ if(!m.dead && m.armed && Math.hypot(b.x-m.x,b.y-m.y)<40){ detonateMine(m); } }
       if(solidAt(b.x,b.y)){
@@ -521,8 +524,11 @@ function step(dt){
     if(m.fuse>0){ m.fuse-=dt; if(m.fuse<=0) detonateMine(m); }
   }
   mines=mines.filter(m=>!m.dead);
+  apeSupport(dt);
+  for(const f of floaters){ f.t+=dt; f.y-=40*dt; }
+  floaters=floaters.filter(f=>f.t<1.4);
   // the shot is over when nothing is flying any more
-  if(shotActive && !bananas.length && !roundOver){ shotActive=false; nextTurn(); }
+  if(shotActive && !bananas.length && !roundOver && !monkey.falling && !target.falling){ shotActive=false; nextTurn(); }
   for(const p of parts){ p.vx*=0.98; p.vy+=600*dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.l-=dt; }
   for(const d of debris){ d.vy+=1100*dt; d.x+=d.vx*dt; d.y+=d.vy*dt; d.rot+=d.vr*dt; d.l-=dt;
     if(solidAt(d.x,d.y) && d.vy>0){ d.y-=d.vy*dt; d.vy*=-0.28; d.vx*=0.6; d.vr*=0.5; } }
@@ -564,31 +570,66 @@ function boom(x,y,r,big){
   }
 }
 const BLAST={std:40, drill:40, mini:26, bounce:40, mine:55, atom:115};
-function explode(b,x,y){
+function explode(b,x,y,direct){
   b.dead=true;
   const r=BLAST[b.type]||40, big=r>=55;
   boom(x,y,r,big||b.type==='atom');
   if(b.type==='atom'){ shakeT=0.9; shakeA=26; flashT=0.6; for(let k=0;k<20;k++) dust.push({x:x+(Math.random()-.5)*r*1.4,y:y+(Math.random()-.5)*r,vx:(Math.random()-.5)*60,vy:-30-Math.random()*60,r0:20+Math.random()*20,l:2+Math.random(),L:3}); }
-  blastHits(x,y,r,b.by,b.shot);
+  blastHits(x,y,r,b.by,b.shot,DMG[b.type]||20,direct);
 }
 function detonateMine(m){
   if(m.dead) return; m.dead=true;
   boom(m.x,m.y,55,true);
-  blastHits(m.x,m.y,55,m.by,null);
+  blastHits(m.x,m.y,55,m.by,null,DMG.mine,null);
   for(const o of mines){ if(!o.dead && Math.hypot(o.x-m.x,o.y-m.y)<80) o.fuse=o.fuse>0?Math.min(o.fuse,0.25):0.25; } // chain
 }
-// apes caught in a blast: the thrower scores for the foe, the opponent scores for an own goal
-function blastHits(x,y,r,by,shot){
+// damage: a direct hit takes the full amount for that banana; an ape near the blast takes a share by distance
+function blastHits(x,y,r,by,shot,full,direct){
   if(roundOver) return;
-  const me=by?target:monkey, foe=by?monkey:target, P=`P${by+1}`, desc=shot?`T ${shot.t}% A ${shot.a}°`:'mine';
-  const reach=r*0.9+18;
-  const hf=foe.alive && Math.hypot(x-foe.x,y-(foe.y-30))<reach;
-  const hm=me.alive && Math.hypot(x-me.x,y-(me.y-30))<reach;
-  if(hf){ killApe(foe,by?1:-1,PCOL[1-by]); score[by]++; me.win=!hm; hitText=`${P} HIT!`; }
-  if(hm){ killApe(me,by?-1:1,PCOL[by]); score[1-by]++; foe.win=!hf; hitText=hf?'DOUBLE KO':'OWN GOAL'; }
-  if(hf||hm){ hitT=2.2; endRound(); bananas.forEach(o=>o.dead=true); pushLog(`${P} ${desc} → ${hitText}`); }
-  else if(shot){ const dist=Math.round(Math.abs(x-foe.x)); pushLog(`${P} ${desc} → ${dist}px off`); }
+  const P=`P${by+1}`, desc=shot?`T ${shot.t}% A ${shot.a}°`:'mine', reach=r*0.9+30;
+  let any=false;
+  for(const ape of [monkey,target]){
+    if(!ape.alive) continue;
+    const d=Math.hypot(x-ape.x,y-(ape.y-30));
+    let dmg=0;
+    if(ape===direct) dmg=full;
+    else if(d<reach) dmg=Math.max(2,Math.round(full*(1-d/reach)*0.6));
+    if(dmg>0){ any=true; damageApe(ape,dmg,by); }
+  }
+  if(shot){ const foe=by?monkey:target; pushLog(`${P} ${desc} → ${any?'hit':Math.round(Math.abs(x-foe.x))+'px off'}`); }
 }
+function damageApe(ape,dmg,by){
+  ape.hp=Math.max(0,ape.hp-dmg);
+  floaters.push({x:ape.x,y:ape.y-70,text:`-${dmg}%`,t:0,col:dmg>=20?'#ff5a4e':'#ffd166'});
+  vib(dmg>=20?[40,30,40]:25);
+  if(ape.hp<=0){
+    const idx=ape===monkey?0:1, other=idx?monkey:target;
+    killApe(ape,idx?-1:1,PCOL[idx]);
+    score[1-idx]++;                         // whoever caused it, the other ape takes the round
+    other.win=other.alive;
+    hitText=(by===idx)?`OWN GOAL`:`P${2-idx} WINS`;
+    if(!monkey.alive && !target.alive) hitText='DOUBLE KO';
+    hitT=2.4; if(!roundOver) endRound(); bananas.forEach(o=>o.dead=true);
+  }
+}
+// an ape with nothing under its feet drops to the next roof below and takes 10%
+function apeSupport(dt){
+  for(const ape of [monkey,target]){
+    if(!ape.alive) continue;
+    const onGround=solidAt(ape.x-10,ape.y+1)||solidAt(ape.x,ape.y+1)||solidAt(ape.x+10,ape.y+1);
+    if(onGround && !ape.falling) continue;
+    if(!ape.falling){ ape.falling=true; ape.vy=0; ape.fallFrom=ape.y; }
+    ape.vy+=S.grav*dt; let ny=ape.y+ape.vy*dt;
+    // land on the first solid point under the feet; stays where it lands, even on a sloped edge
+    for(let yy=Math.floor(ape.y); yy<=ny; yy++){
+      if(solidAt(ape.x-10,yy+1)||solidAt(ape.x,yy+1)||solidAt(ape.x+10,yy+1)){ ny=yy; ape.falling=false; break; }
+    }
+    ape.y=ny;
+    if(!ape.falling){ ape.vy=0; if(ape.y-ape.fallFrom>6){ boom2dust(ape.x,ape.y); damageApe(ape,10,null); } }
+    if(ape.y>WH+60){ ape.falling=false; damageApe(ape,ape.hp,null); }
+  }
+}
+function boom2dust(x,y){ for(let i=0;i<5;i++) dust.push({x:x+(Math.random()-.5)*30,y:y-4,vx:(Math.random()-.5)*50,vy:-15-Math.random()*20,r0:8,l:1,L:1.2}); shakeT=0.15; shakeA=5; }
 function killApe(ape,dir,pc){
   ape.alive=false;
   corpses.push({x:ape.x,y:ape.y,vx:(Math.random()<.5?-1:1)*(60+Math.random()*80),vy:-420,rot:0,vr:(Math.random()-.5)*10,dir,pc,t:0});
@@ -676,6 +717,17 @@ function render(now){
   if(hitT>0){ ctx.font='bold 90px system-ui'; ctx.textAlign='center'; ctx.fillStyle=`rgba(255,209,102,${Math.min(1,hitT)})`; ctx.fillText(hitText,WW/2,300); }
   else if(bannerT>0 && !roundOver){ ctx.font='bold 64px system-ui'; ctx.textAlign='center'; ctx.globalAlpha=Math.min(1,bannerT); ctx.fillStyle=PCOL[turn]; ctx.fillText(`PLAYER ${turn+1}`,WW/2,260); ctx.globalAlpha=1; }
   // score
+  for(const f of floaters){ ctx.globalAlpha=Math.max(0,1-f.t/1.4); ctx.font='bold 34px system-ui'; ctx.textAlign='center';
+    ctx.fillStyle='rgba(0,0,0,.5)'; ctx.fillText(f.text,f.x+2,f.y+2); ctx.fillStyle=f.col; ctx.fillText(f.text,f.x,f.y); }
+  ctx.globalAlpha=1;
+  const hpBar=(x0,hp,rightAlign,col)=>{ const w=190,h=18,y0=33;
+    ctx.fillStyle='rgba(12,14,26,.6)'; ctx.fillRect(x0-2,y0-2,w+4,h+4);
+    const k=Math.max(0,hp)/100, ww=w*k, hc=hp>50?'#4ade80':hp>25?'#facc15':'#ef4444';
+    ctx.fillStyle=hc; ctx.fillRect(rightAlign?x0+w-ww:x0,y0,ww,h);
+    ctx.fillStyle=col; ctx.fillRect(rightAlign?x0+w-3:x0,y0,3,h);
+    ctx.font='bold 15px system-ui'; ctx.textAlign='center'; ctx.fillStyle='#fff'; ctx.fillText(`${Math.ceil(Math.max(0,hp))}%`,x0+w/2,y0+14); };
+  hpBar(WW/2-320,monkey.alive?monkey.hp:0,true,PCOL[0]);
+  hpBar(WW/2+130,target.alive?target.hp:0,false,PCOL[1]);
   ctx.font='bold 40px system-ui'; ctx.textAlign='center';
   ctx.fillStyle='rgba(12,14,26,.55)'; ctx.fillRect(WW/2-110,14,220,56);
   ctx.fillStyle=PCOL[0]; ctx.fillText(`P1 ${score[0]}`,WW/2-50,57);
@@ -823,7 +875,7 @@ document.getElementById('bStart').onclick=async()=>{
 resize(); newTrack(); placeBtn(); requestAnimationFrame(loop);
 if('serviceWorker' in navigator && location.protocol==='https:'){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
 // expose for testing
-window.__amc={dbg:{theme(i){theme=THEMES[i];bgCache=null;drawBuildings();initClouds();},noWind(){wind=0;},aimAt(){const sh=shooter(),fo=victim();return {sx:sh.x,sy:sh.y,fx:fo.x,fy:fo.y};},fire(vx,vy,type){const hp=handOf(shooter(),side());bananas=[{x:hp.x,y:hp.y,vx,vy,rot:0,t:0,by:turn,type:type||'std',n:0,shot:{t:0,a:0}}];shotActive=true;shooter().throwT=performance.now();}},get turn(){return turn}, get score(){return score}, S,g,get ref(){return ref},set ref(v){ref=v},startHold,endHold,get banana(){return bananas[0]||null}, get mines(){return mines}, get ammo(){return ammo},pull,setSensor(){hasSensor=true}};
+window.__amc={dbg:{theme(i){theme=THEMES[i];bgCache=null;drawBuildings();initClouds();},noWind(){wind=0;},aimAt(){const sh=shooter(),fo=victim();return {sx:sh.x,sy:sh.y,fx:fo.x,fy:fo.y};},fire(vx,vy,type){const hp=handOf(shooter(),side());bananas=[{x:hp.x,y:hp.y,vx,vy,rot:0,t:0,by:turn,type:type||'std',n:0,shot:{t:0,a:0}}];shotActive=true;shooter().throwT=performance.now();}},get turn(){return turn}, get score(){return score}, S,g,get ref(){return ref},set ref(v){ref=v},startHold,endHold,get banana(){return bananas[0]||null}, get hp(){return [monkey.hp,target.hp]}, get ys(){return [monkey.y,target.y,monkey.falling,target.falling]}, get mines(){return mines}, get ammo(){return ammo},pull,setSensor(){hasSensor=true}};
 </script>
 </body>
 </html>
