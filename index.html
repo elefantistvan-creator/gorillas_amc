@@ -49,7 +49,9 @@
 </div>
 <div id="panel">
   <h3>AMC settings</h3>
-  <label>Sensor <select id="selSrc"><option value="move">Move (x / y)</option><option value="gyro">Gyro (turn)</option><option value="tilt">Gravity (tilt)</option></select></label>
+  <label>Sensor <select id="selSrc"><option value="split">Turn = power, nod = height</option><option value="move">Move (x / y)</option><option value="gyro">Gyro (turn)</option><option value="tilt">Gravity (tilt)</option></select></label>
+  <label>Turn for full power <span><input type="range" id="sSpTurn" min="10" max="60" step="1"><b id="vSpTurn"></b></span></label>
+  <label>Nod for full height <span><input type="range" id="sSpTilt" min="10" max="60" step="1"><b id="vSpTilt"></b></span></label>
   <label>Pull for full tension <span><input type="range" id="sMoveX" min="5" max="50" step="1"><b id="vMoveX"></b></span></label>
   <label>Up/down for full height <span><input type="range" id="sMoveY" min="5" max="40" step="1"><b id="vMoveY"></b></span></label>
   <label>Drift brake <span><input type="range" id="sLeak" min="0" max="5" step="0.1"><b id="vLeak"></b></span></label>
@@ -71,7 +73,7 @@
 <div id="overlay">
   <h1>AMC TEST TRACK</h1>
   <p>Hold the phone in landscape. <b>Press and hold</b> the orange button — that moment is the zero point.
-  Move the phone sideways, away from the target, to pull: further = stronger, and it trembles more. Move it up or down to set the shot height.
+  Turn the phone sideways, away from the target, for power: further = stronger, and it trembles more. Nod it (top toward you / away) to set the shot height.
   <b>Release</b> to throw.</p>
   <p style="font-size:13px">No motion sensor (PC)? Press anywhere on the track and drag back like a slingshot.</p>
   <button class="btn" id="bStart">START</button>
@@ -81,9 +83,9 @@
 <script>
 'use strict';
 // ---------- settings ----------
-const DEF={src:'move',moveX:20,moveY:15,leak:1.5,turn:25,tilt:5,speed:1150,tremble:1,grav:900,smooth:0.3,vib:true,invX:false,invY:false,prev:true,wind:true,left:false};
+const DEF={ver:5,src:'split',spTurn:30,spTilt:30,moveX:20,moveY:15,leak:1.5,turn:25,tilt:5,speed:1150,tremble:1,grav:900,smooth:0.3,vib:true,invX:false,invY:false,prev:true,wind:true,left:false};
 let S=Object.assign({},DEF);
-try{const j=JSON.parse(localStorage.getItem('amc_settings')||'null'); if(j) Object.assign(S,j);}catch(e){}
+try{const j=JSON.parse(localStorage.getItem('amc_settings')||'null'); if(j && j.ver===DEF.ver) Object.assign(S,j);}catch(e){}
 function saveS(){try{localStorage.setItem('amc_settings',JSON.stringify(S));}catch(e){}}
 
 // ---------- canvas / world ----------
@@ -297,6 +299,19 @@ function computePull(now){
     dx=(mouseCur.x-mouseRef.x)/scale; dy=-(mouseCur.y-mouseRef.y)/scale; // pull vector, y up
     const m=Math.hypot(dx,dy); tension=Math.min(1,m/mouseFull());
     if(m>0.001){ dirx=-dx/m; diry=-dy/m; }
+  } else if(S.src==='split' && (hasOri||hasGyro)){
+    // turn left/right (about the screen's up axis) = power, nod (top toward you) = height. Roll ignored.
+    let rv={x:rot.x,y:rot.y};
+    if(hasOri&&R0&&ori){ rv=relRotVec(R0,rotMat(ori.a,ori.b,ori.g)); }
+    const r=toScreen({x:rv.x,y:rv.y});
+    let turn=-r.y, nod=r.x;               // turn away from the target = power, top toward you = higher
+    if(S.invX) turn=-turn; if(S.invY) nod=-nod;
+    const k=Math.min(1,S.smooth*2); gsm.x+=(turn-gsm.x)*k; gsm.y+=(nod-gsm.y)*k;
+    tension=Math.max(0,Math.min(1,(gsm.x-1)/(S.spTurn-1)));
+    const h=Math.max(-1,Math.min(1,gsm.y/S.spTilt));
+    const angDeg=Math.max(2,Math.min(85,45+h*43));
+    dirx=Math.cos(angDeg*Math.PI/180); diry=Math.sin(angDeg*Math.PI/180);
+    dx=gsm.x; dy=gsm.y;
   } else if(S.src==='move'){
     // sideways (away from the target) = tension, up/down = shot height. No rotation used.
     let hx=-mv.px, vy=-mv.py;            // move left = pull, move down = higher shot
@@ -450,7 +465,7 @@ function drawHUD(){
   ctx.fillText(`ANGLE  ${holding?Math.round(pull.ang*180/Math.PI)+'°':'—'}`,x+10,y+46);
   ctx.fillText(`SPEED  ${holding?Math.round(pull.t*S.speed):'—'}`,x+130,y+46);
   ctx.fillText(`WIND  ${wind>0?'→':wind<0?'←':'·'} ${Math.abs(wind)}`,x+10,y+68);
-  ctx.fillText(mouseMode?'MODE  mouse':(hasSensor?`MODE  ${S.src==='move'?'move':S.src==='gyro'&&hasOri?'pose':(S.src==='gyro'&&hasGyro?'gyro':'gravity')} (${sensorRate} Hz)`:'MODE  waiting for sensor'),x+10,y+90);
+  ctx.fillText(mouseMode?'MODE  mouse':(hasSensor?`MODE  ${S.src==='split'&&(hasOri||hasGyro)?'turn+nod':S.src==='move'?'move':S.src==='gyro'&&hasOri?'pose':(S.src==='gyro'&&hasGyro?'gyro':'gravity')} (${sensorRate} Hz)`:'MODE  waiting for sensor'),x+10,y+90);
   ctx.font='12px system-ui'; ctx.fillStyle='rgba(255,255,255,.7)';
   ctx.fillText(mouseMode?`LOCK ${document.pointerLockElement?'ON':'OFF'}   pull ${mouseCur?Math.round(mouseCur.x)+','+Math.round(mouseCur.y):'-'}`:screenAngle()+'° screen',x+10,y+110);
   // log
@@ -510,6 +525,8 @@ document.getElementById('bSet').onclick=()=>document.getElementById('panel').cla
 function bindRange(id,key,fmt){ const el=document.getElementById(id), v=document.getElementById('v'+id.slice(1));
   el.value=S[key]; v.textContent=fmt(S[key]); el.oninput=()=>{ S[key]=parseFloat(el.value); v.textContent=fmt(S[key]); saveS(); }; }
 function bindChk(id,key,cb){ const el=document.getElementById(id); el.checked=!!S[key]; el.onchange=()=>{ S[key]=el.checked; saveS(); cb&&cb(); }; }
+bindRange('sSpTurn','spTurn',v=>v+'°');
+bindRange('sSpTilt','spTilt',v=>'±'+v+'°');
 bindRange('sMoveX','moveX',v=>v+' cm');
 bindRange('sMoveY','moveY',v=>'±'+v+' cm');
 bindRange('sLeak','leak',v=>v.toFixed(1));
