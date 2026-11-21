@@ -49,7 +49,10 @@
 </div>
 <div id="panel">
   <h3>AMC settings</h3>
-  <label>Sensor <select id="selSrc"><option value="gyro">Gyro (turn)</option><option value="tilt">Gravity (tilt)</option></select></label>
+  <label>Sensor <select id="selSrc"><option value="move">Move (x / y)</option><option value="gyro">Gyro (turn)</option><option value="tilt">Gravity (tilt)</option></select></label>
+  <label>Pull for full tension <span><input type="range" id="sMoveX" min="5" max="50" step="1"><b id="vMoveX"></b></span></label>
+  <label>Up/down for full height <span><input type="range" id="sMoveY" min="5" max="40" step="1"><b id="vMoveY"></b></span></label>
+  <label>Drift brake <span><input type="range" id="sLeak" min="0" max="5" step="0.1"><b id="vLeak"></b></span></label>
   <label>Max turn (gyro) <span><input type="range" id="sTurn" min="8" max="60" step="1"><b id="vTurn"></b></span></label>
   <label>Max tilt (gravity) <span><input type="range" id="sTilt" min="2" max="9" step="0.5"><b id="vTilt"></b></span></label>
   <label>Max throw speed <span><input type="range" id="sSpeed" min="600" max="1800" step="50"><b id="vSpeed"></b></span></label>
@@ -68,7 +71,7 @@
 <div id="overlay">
   <h1>AMC TEST TRACK</h1>
   <p>Hold the phone in landscape. <b>Press and hold</b> the orange button — that moment is the zero point.
-  Tilt the phone away from zero to pull the slingshot: further = stronger, and it trembles more.
+  Move the phone sideways, away from the target, to pull: further = stronger, and it trembles more. Move it up or down to set the shot height.
   <b>Release</b> to throw.</p>
   <p style="font-size:13px">No motion sensor (PC)? Press anywhere on the track and drag back like a slingshot.</p>
   <button class="btn" id="bStart">START</button>
@@ -78,7 +81,7 @@
 <script>
 'use strict';
 // ---------- settings ----------
-const DEF={src:'gyro',turn:25,tilt:5,speed:1150,tremble:1,grav:900,smooth:0.3,vib:true,invX:false,invY:false,prev:true,wind:true,left:false};
+const DEF={src:'move',moveX:20,moveY:15,leak:1.5,turn:25,tilt:5,speed:1150,tremble:1,grav:900,smooth:0.3,vib:true,invX:false,invY:false,prev:true,wind:true,left:false};
 let S=Object.assign({},DEF);
 try{const j=JSON.parse(localStorage.getItem('amc_settings')||'null'); if(j) Object.assign(S,j);}catch(e){}
 function saveS(){try{localStorage.setItem('amc_settings',JSON.stringify(S));}catch(e){}}
@@ -201,6 +204,8 @@ const HAND={dx:22,dy:-60};
 let hasSensor=false, sensorEvents=0, sensorRate=0, lastRateT=0;
 const g={x:0,y:0,z:0}; let ref=null;
 let hasGyro=false; const rot={x:0,y:0}; let lastMotionT=0;
+// move mode: phone displacement in the screen plane (metres), from linear acceleration
+let hasLin=false; const mv={vx:0,vy:0,px:0,py:0}, abias={x:0,y:0};
 // fused orientation (deviceorientation): compare the current pose to the pose at the press
 let hasOri=false, ori=null, R0=null;
 function rotMat(a,b,g){ // W3C: R = Rz(alpha)·Rx(beta)·Ry(gamma), device -> world
@@ -225,6 +230,23 @@ function onMotion(e){
   const a=e.accelerationIncludingGravity; if(!a||a.x==null) return;
   hasSensor=true; sensorEvents++;
   const now=performance.now(); const dt=lastMotionT?Math.min(0.1,(now-lastMotionT)/1000):0; lastMotionT=now;
+  // linear acceleration (gravity removed), into screen axes
+  let la=e.acceleration;
+  if(la && la.x!=null){ hasLin=true; }
+  else if(a){ la={x:a.x-g.x, y:a.y-g.y}; }
+  if(la && dt>0){
+    const sa=toScreen({x:la.x,y:la.y});
+    if(!holding){ abias.x+=(sa.x-abias.x)*0.05; abias.y+=(sa.y-abias.y)*0.05; }
+    else {
+      const dz=0.12;
+      let ax=sa.x-abias.x, ay=sa.y-abias.y;
+      if(Math.abs(ax)<dz) ax=0; if(Math.abs(ay)<dz) ay=0;
+      mv.vx+=ax*dt; mv.vy+=ay*dt;
+      const k=Math.exp(-S.leak*dt); mv.vx*=k; mv.vy*=k;   // drift brake
+      mv.px+=mv.vx*dt; mv.py+=mv.vy*dt;
+      const lim=1.0; mv.px=Math.max(-lim,Math.min(lim,mv.px)); mv.py=Math.max(-lim,Math.min(lim,mv.py));
+    }
+  }
   const rr=e.rotationRate;
   if(rr && rr.beta!=null){
     hasGyro=true;
@@ -256,7 +278,7 @@ function noise(t,o){ return Math.sin(t*13.1+nPh[o])*.5+Math.sin(t*21.7+nPh[o+1])
 function startHold(){
   if(banana) return;
   holding=true; holdT0=performance.now();
-  if(hasSensor && !mouseMode){ ref={x:g.x,y:g.y,z:g.z}; rot.x=0; rot.y=0; gsm.x=0; gsm.y=0; R0=(hasOri&&ori)?rotMat(ori.a,ori.b,ori.g):null; }
+  if(hasSensor && !mouseMode){ ref={x:g.x,y:g.y,z:g.z}; rot.x=0; rot.y=0; gsm.x=0; gsm.y=0; mv.vx=mv.vy=mv.px=mv.py=0; R0=(hasOri&&ori)?rotMat(ori.a,ori.b,ori.g):null; }
   vib(15);
   shootBtn.classList.add('held');
 }
@@ -275,6 +297,15 @@ function computePull(now){
     dx=(mouseCur.x-mouseRef.x)/scale; dy=-(mouseCur.y-mouseRef.y)/scale; // pull vector, y up
     const m=Math.hypot(dx,dy); tension=Math.min(1,m/mouseFull());
     if(m>0.001){ dirx=-dx/m; diry=-dy/m; }
+  } else if(S.src==='move'){
+    // sideways (away from the target) = tension, up/down = shot height. No rotation used.
+    let hx=-mv.px, vy=-mv.py;            // move left = pull, move down = higher shot
+    if(S.invX) hx=-hx; if(S.invY) vy=-vy;
+    tension=Math.max(0,Math.min(1,hx/(S.moveX/100)));
+    const h=Math.max(-1,Math.min(1,vy/(S.moveY/100)));
+    const angDeg=Math.max(2,Math.min(85,45+h*43));
+    dirx=Math.cos(angDeg*Math.PI/180); diry=Math.sin(angDeg*Math.PI/180);
+    dx=mv.px*100; dy=mv.py*100;          // cm, for the debug panel
   } else if(S.src==='gyro' && (hasOri||hasGyro)){
     // rotation about screen x = pitch (top toward you), about screen y = turn left/right
     let rv={x:rot.x,y:rot.y};
@@ -419,7 +450,7 @@ function drawHUD(){
   ctx.fillText(`ANGLE  ${holding?Math.round(pull.ang*180/Math.PI)+'°':'—'}`,x+10,y+46);
   ctx.fillText(`SPEED  ${holding?Math.round(pull.t*S.speed):'—'}`,x+130,y+46);
   ctx.fillText(`WIND  ${wind>0?'→':wind<0?'←':'·'} ${Math.abs(wind)}`,x+10,y+68);
-  ctx.fillText(mouseMode?'MODE  mouse':(hasSensor?`MODE  ${S.src==='gyro'&&hasOri?'pose':(S.src==='gyro'&&hasGyro?'gyro':'gravity')} (${sensorRate} Hz)`:'MODE  waiting for sensor'),x+10,y+90);
+  ctx.fillText(mouseMode?'MODE  mouse':(hasSensor?`MODE  ${S.src==='move'?'move':S.src==='gyro'&&hasOri?'pose':(S.src==='gyro'&&hasGyro?'gyro':'gravity')} (${sensorRate} Hz)`:'MODE  waiting for sensor'),x+10,y+90);
   ctx.font='12px system-ui'; ctx.fillStyle='rgba(255,255,255,.7)';
   ctx.fillText(mouseMode?`LOCK ${document.pointerLockElement?'ON':'OFF'}   pull ${mouseCur?Math.round(mouseCur.x)+','+Math.round(mouseCur.y):'-'}`:screenAngle()+'° screen',x+10,y+110);
   // log
@@ -443,7 +474,7 @@ function updDbg(){
   const d=ref?toScreen({x:g.x-ref.x,y:g.y-ref.y}):{x:0,y:0};
   document.getElementById('dbg').innerHTML=
     `rate: ${sensorRate} Hz<br>g: ${g.x.toFixed(2)} ${g.y.toFixed(2)} ${g.z.toFixed(2)}<br>`+
-    `Δscreen: ${d.x.toFixed(2)} ${d.y.toFixed(2)}<br>gyro: ${hasGyro?'yes':'no'}  rot ${rot.x.toFixed(1)}° ${rot.y.toFixed(1)}°<br>tilt ≈ ${Math.round(Math.asin(Math.min(1,Math.hypot(d.x,d.y)/9.81))*180/Math.PI)}°`;
+    `move: ${(mv.px*100).toFixed(1)} cm, ${(mv.py*100).toFixed(1)} cm  lin:${hasLin?'yes':'calc'}<br>Δscreen: ${d.x.toFixed(2)} ${d.y.toFixed(2)}<br>gyro: ${hasGyro?'yes':'no'}  rot ${rot.x.toFixed(1)}° ${rot.y.toFixed(1)}°<br>tilt ≈ ${Math.round(Math.asin(Math.min(1,Math.hypot(d.x,d.y)/9.81))*180/Math.PI)}°`;
 }
 
 // ---------- input ----------
@@ -479,6 +510,9 @@ document.getElementById('bSet').onclick=()=>document.getElementById('panel').cla
 function bindRange(id,key,fmt){ const el=document.getElementById(id), v=document.getElementById('v'+id.slice(1));
   el.value=S[key]; v.textContent=fmt(S[key]); el.oninput=()=>{ S[key]=parseFloat(el.value); v.textContent=fmt(S[key]); saveS(); }; }
 function bindChk(id,key,cb){ const el=document.getElementById(id); el.checked=!!S[key]; el.onchange=()=>{ S[key]=el.checked; saveS(); cb&&cb(); }; }
+bindRange('sMoveX','moveX',v=>v+' cm');
+bindRange('sMoveY','moveY',v=>'±'+v+' cm');
+bindRange('sLeak','leak',v=>v.toFixed(1));
 bindRange('sTurn','turn',v=>v+'°');
 { const el=document.getElementById('selSrc'); el.value=S.src; el.onchange=()=>{ S.src=el.value; saveS(); }; }
 bindRange('sTilt','tilt',v=>Math.round(Math.asin(Math.min(1,v/9.81))*180/Math.PI)+'°');
