@@ -230,9 +230,14 @@ function drawBuildings(){
 }
 function addCrater(x,y,r){
   craters.push({x,y,r});
-  bCtx.globalCompositeOperation='destination-out';
+  // scorched rim: darken the wall around the hole (only where wall exists), so the hole reads clearly
+  bCtx.globalCompositeOperation='source-atop';
+  const rg=bCtx.createRadialGradient(x,y,r*.9,x,y,r*1.45);
+  rg.addColorStop(0,'rgba(25,15,10,.85)'); rg.addColorStop(1,'rgba(25,15,10,0)');
+  bCtx.fillStyle=rg; bCtx.beginPath(); bCtx.arc(x,y,r*1.45,0,7); bCtx.fill();
+  bCtx.globalCompositeOperation='destination-out'; bCtx.fillStyle='#000';
   bCtx.beginPath(); bCtx.arc(x,y,r,0,7); bCtx.fill();
-  bCtx.globalCompositeOperation='source-over';
+  bCtx.globalCompositeOperation='source-over'; bCtx.fillStyle='#000';
 }
 function solidAt(x,y){
   if(y>=WH) return true;
@@ -459,7 +464,7 @@ function step(dt){
         pushLog(`${P} T ${b.shot.t}% A ${b.shot.a}° → self`); banana=null; break;
       }
       if(solidAt(b.x,b.y)){
-        boom(b.x,b.y,28,false);
+        boom(b.x,b.y,40,false);
         const dist=Math.round(Math.abs(b.x-foe.x));
         pushLog(`${P} T ${b.shot.t}% A ${b.shot.a}° → ${dist}px off`); banana=null; nextTurn(); break;
       }
