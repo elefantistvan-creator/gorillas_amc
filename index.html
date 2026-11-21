@@ -68,6 +68,7 @@
   <label>Max throw speed <span><input type="range" id="sSpeed" min="600" max="1800" step="50"><b id="vSpeed"></b></span></label>
   <label>Tremble <span><input type="range" id="sTremble" min="0" max="2" step="0.1"><b id="vTremble"></b></span></label>
   <label>Tremble max (long aim) <span><input type="range" id="sTrMax" min="1" max="8" step="0.5"><b id="vTrMax"></b></span></label>
+  <label>Turn time (0 = off) <span><input type="range" id="sTurnT" min="0" max="30" step="1"><b id="vTurnT"></b></span></label>
   <label>Gravity <span><input type="range" id="sGrav" min="400" max="1600" step="50"><b id="vGrav"></b></span></label>
   <label>Smoothing <span><input type="range" id="sSmooth" min="0.05" max="1" step="0.05"><b id="vSmooth"></b></span></label>
   <label>Vibration <input type="checkbox" id="cVib"></label>
@@ -92,7 +93,7 @@
 <script>
 'use strict';
 // ---------- settings ----------
-const DEF={ver:6,trMax:4,src:'split',spTurn:30,spTilt:30,moveX:20,moveY:15,leak:1.5,turn:25,tilt:5,speed:1150,tremble:1,grav:900,smooth:0.3,vib:true,invX:false,invY:false,prev:true,wind:true,left:false};
+const DEF={ver:7,turnTime:10,trMax:4,src:'split',spTurn:30,spTilt:30,moveX:20,moveY:15,leak:1.5,turn:25,tilt:5,speed:1150,tremble:1,grav:900,smooth:0.3,vib:true,invX:false,invY:false,prev:true,wind:true,left:false};
 let S=Object.assign({},DEF);
 try{const j=JSON.parse(localStorage.getItem('amc_settings')||'null'); if(j && j.ver===DEF.ver) Object.assign(S,j);}catch(e){}
 function saveS(){try{localStorage.setItem('amc_settings',JSON.stringify(S));}catch(e){}}
@@ -221,7 +222,7 @@ function newTrack(){
   roundOver=false; turnWait=0; monkey.win=target.win=false;
   wind = S.wind ? Math.round((Math.random()*2-1)*120) : 0;
   theme=THEMES[Math.floor(Math.random()*THEMES.length)]; bgCache=null;
-  drawBuildings(); initClouds(); bananas=[]; mines=[]; shotActive=false; parts=[]; trail=[]; debris=[]; dust=[]; corpses=[];
+  drawBuildings(); initClouds(); bananas=[]; mines=[]; fires=[]; shotActive=false; turnClock=S.turnTime; gustT=0; parts=[]; trail=[]; debris=[]; dust=[]; corpses=[];
   if(typeof resetAmmo==='function' && BTYPES) resetAmmo();
 }
 function drawBuildings(){
@@ -367,18 +368,28 @@ let pull={x:0,y:0,t:0,ang:0}; // live aim
 const gsm={x:0,y:0}; // smoothed gyro pull
 let debris=[], dust=[], corpses=[], shakeT=0, shakeA=0, floaters=[];
 // damage in % of life: direct hit by type; near misses get a share by distance
-const DMG={std:20, drill:20, mini:10, bounce:20, mine:25, atom:50};
+const DMG={std:20, drill:20, mini:10, bounce:20, mine:25, fire:15, atom:50};
 // banana types: id, label, colour, ammo per player per round (-1 = unlimited)
 const BTYPES=[
   {id:'std',   name:'BANANA', col:'#ffd23f', ammo:-1},
-  {id:'drill', name:'DRILL',  col:'#b9c3cf', ammo:2},
-  {id:'split', name:'SPLIT',  col:'#7ee081', ammo:2},
-  {id:'bounce',name:'BOUNCE', col:'#ff8fc7', ammo:2},
-  {id:'mine',  name:'MINE',   col:'#c98a3e', ammo:2},
-  {id:'atom',  name:'ATOM',   col:'#9dff5c', ammo:1}];
-let ammo=[{},{}], selType=[0,0], bananas=[], mines=[], shotActive=false;
+  {id:'drill', name:'DRILL',  col:'#b9c3cf', ammo:0},
+  {id:'split', name:'SPLIT',  col:'#7ee081', ammo:0},
+  {id:'bounce',name:'BOUNCE', col:'#ff8fc7', ammo:0},
+  {id:'fire',  name:'FIRE',   col:'#ff6a2b', ammo:0},
+  {id:'atom',  name:'ATOM',   col:'#9dff5c', ammo:0}];
+let ammo=[{},{}], selType=[0,0], bananas=[], mines=[], fires=[], shotActive=false;
+// earn a random special banana for landing close to the foe (atom is rare); max 3 of each
+function awardSpecial(p){
+  const pool=['drill','drill','drill','split','split','split','bounce','bounce','bounce','fire','fire','fire','atom'];
+  const id=pool[Math.floor(Math.random()*pool.length)];
+  if(ammo[p][id]>=3) return;
+  ammo[p][id]++;
+  const ape=p?target:monkey, t=BTYPES.find(b=>b.id===id);
+  floaters.push({x:ape.x,y:ape.y-100,text:`+${t.name}`,t:0,col:t.col});
+  buildAmmoUI();
+}
 function resetAmmo(){ for(let p=0;p<2;p++){ ammo[p]={}; BTYPES.forEach(t=>ammo[p][t.id]=t.ammo); } selType=[0,0]; buildAmmoUI(); }
-let trail=[], parts=[], flashT=0, hitText='', hitT=0, wind=0, log=[];
+let trail=[], parts=[], flashT=0, hitText='', hitT=0, wind=0, windNow=0, gustT=0, log=[], streaks=[], windShow=0, lastWindNow=0;
 const nPh=[Math.random()*6,Math.random()*6,Math.random()*6,Math.random()*6];
 function noise(t,o){ return Math.sin(t*13.1+nPh[o])*.5+Math.sin(t*21.7+nPh[o+1])*.3+Math.sin(t*34.3+nPh[o]*2)*.2; }
 
@@ -474,13 +485,25 @@ function pushLog(s){ log.unshift(s); if(log.length>5) log.pop(); }
 
 // ---------- physics ----------
 function step(dt){
-  for(const c of clouds){ c.x+=(c.v+wind*0.15)*dt; if(c.x>WW+200) c.x=-350; if(c.x<-400) c.x=WW+150; }
+  // wind gusts: slow drift around the base wind, it can change during a flight
+  gustT+=dt;
+  const gA=S.wind?(18+Math.abs(wind)*0.35):0;
+  windNow=wind+gA*(Math.sin(gustT*0.55+1.3)*0.6+Math.sin(gustT*1.37)*0.4);
+  if(Math.abs(windNow-lastWindNow)>12){ windShow=1.5; lastWindNow=windNow; }  // a noticeable change: show a gust
+  if(windShow>0) windShow-=dt;
+  // wind streaks: faint lines whose speed and number follow the wind
+  const want=Math.abs(windNow)<4?0:Math.min(46,Math.round(6+Math.abs(windNow)/3.2+(windShow>0?14:0)));
+  while(streaks.length<want){ const dir=Math.sign(windNow)||1; streaks.push({x:dir>0?-60-Math.random()*WW*.2:WW+60+Math.random()*WW*.2,y:40+Math.random()*(WH-120),len:30+Math.random()*70,a:.08+Math.random()*.12,k:.7+Math.random()*.6}); }
+  if(streaks.length>want) streaks.length=want;
+  for(const st of streaks){ st.x+=(windNow*3.2*st.k+Math.sign(windNow)*30)*dt; st.y+=Math.sin(gustT*2+st.len)*6*dt;
+    if(st.x>WW+120||st.x<-120){ const dir=Math.sign(windNow)||1; st.x=dir>0?-80:WW+80; st.y=40+Math.random()*(WH-120); } }
+  for(const c of clouds){ c.x+=(c.v+windNow*0.15)*dt; if(c.x>WW+200) c.x=-350; if(c.x<-400) c.x=WW+150; }
   // ---- bananas
   const sub=4, h=dt/sub;
   for(const b of bananas){ if(b.dead) continue; b.t+=dt;
     for(let i=0;i<sub&&!b.dead;i++){
       const px=b.x, py=b.y, pvy=b.vy;
-      b.vx+=wind*h; b.vy+=S.grav*h; b.x+=b.vx*h; b.y+=b.vy*h; b.rot+=h*14;
+      b.vx+=windNow*h; b.vy+=S.grav*h; b.x+=b.vx*h; b.y+=b.vy*h; b.rot+=h*14;
       const me=b.by?target:monkey, foe=b.by?monkey:target;
       // split: at the top of the arc, become three
       if(b.type==='split' && pvy<0 && b.vy>=0){
@@ -525,6 +548,15 @@ function step(dt){
   }
   mines=mines.filter(m=>!m.dead);
   apeSupport(dt);
+  for(const f of fires){ if(!solidAt(f.x,f.y+2)){ f.vy+=S.grav*dt; f.y+=f.vy*dt; } else f.vy=0; }
+  fires=fires.filter(f=>f.y<WH+40);
+  // turn timer: running out while aiming throws the banana as it is; otherwise the turn is lost
+  if(S.turnTime>0 && !roundOver && !shotActive && !bananas.length && turnWait<=0 && sensorsReady()){
+    turnClock-=dt;
+    if(turnClock<=0){ turnClock=0;
+      if(holding){ endHold(); if(!shotActive){ hitText='TIME!'; hitT=1; pushLog(`P${turn+1} time up`); nextTurn(); } }
+      else { hitText='TIME!'; hitT=1; pushLog(`P${turn+1} time up`); nextTurn(); } }
+  }
   for(const f of floaters){ f.t+=dt; f.y-=40*dt; }
   floaters=floaters.filter(f=>f.t<1.4);
   // the shot is over when nothing is flying any more
@@ -533,18 +565,29 @@ function step(dt){
   for(const d of debris){ d.vy+=1100*dt; d.x+=d.vx*dt; d.y+=d.vy*dt; d.rot+=d.vr*dt; d.l-=dt;
     if(solidAt(d.x,d.y) && d.vy>0){ d.y-=d.vy*dt; d.vy*=-0.28; d.vx*=0.6; d.vr*=0.5; } }
   debris=debris.filter(d=>d.l>0 && d.y<WH+40);
-  for(const d of dust){ d.vx+=wind*0.08*dt; d.x+=d.vx*dt; d.y+=d.vy*dt; d.l-=dt; }
+  for(const d of dust){ d.vx+=windNow*0.08*dt; d.x+=d.vx*dt; d.y+=d.vy*dt; d.l-=dt; }
   dust=dust.filter(d=>d.l>0);
   for(const c of corpses){ c.t+=dt; c.vy+=S.grav*dt; c.x+=c.vx*dt; c.y+=c.vy*dt; c.rot+=c.vr*dt; }
   corpses=corpses.filter(c=>c.y<WH+150);
   if(shakeT>0) shakeT-=dt;
   parts=parts.filter(p=>p.l>0);
   if(flashT>0) flashT-=dt; if(hitT>0) hitT-=dt;
-  if(turnWait>0){ turnWait-=dt; if(turnWait<=0){ turnWait=0; if(roundOver){ newTrack(); turn=nextStarter; nextStarter=1-nextStarter; bannerT=1.2; buildAmmoUI(); } } }
+  if(turnWait>0){ turnWait-=dt; if(turnWait<=0){ turnWait=0; if(roundOver){ newTrack(); turn=nextStarter; nextStarter=1-nextStarter; bannerT=1.2; turnClock=S.turnTime; buildAmmoUI(); } } }
   if(bannerT>0) bannerT-=dt;
 }
 let bannerT=1.2;
-function nextTurn(){ turn=1-turn; turnWait=0.7; bannerT=1.4; buildAmmoUI(); }
+function sensorsReady(){ return document.getElementById('overlay').style.display==='none'; }
+function nextTurn(){ turn=1-turn; turnWait=0.7; bannerT=1.4; turnClock=S.turnTime; buildAmmoUI(); burnTick(); }
+// each burning patch hurts an ape standing close by 5%, for 2 turns
+function burnTick(){
+  for(const f of fires){
+    if(f.fresh){ f.fresh=false; continue; }   // starts burning from the next turn
+    for(const ape of [monkey,target]){ if(ape.alive && !roundOver && Math.hypot(ape.x-f.x,ape.y-f.y)<70) damageApe(ape,5,f.by); }
+    f.turns--;
+  }
+  fires=fires.filter(f=>f.turns>0);
+}
+let turnClock=10;
 function endRound(){ roundOver=true; turnWait=2.4; }
 let dustImg=null;
 function dustSprite(){
@@ -569,12 +612,13 @@ function boom(x,y,r,big){
     dust.push({x:x+(Math.random()-.5)*r,y:y+(Math.random()-.5)*r,vx:(Math.random()-.5)*40,vy:-20-Math.random()*40,r0:10+Math.random()*10,l:1.2+Math.random()*.8,L:2});
   }
 }
-const BLAST={std:40, drill:40, mini:26, bounce:40, mine:55, atom:115};
+const BLAST={std:40, drill:40, mini:26, bounce:40, mine:55, fire:30, atom:115};
 function explode(b,x,y,direct){
   b.dead=true;
   const r=BLAST[b.type]||40, big=r>=55;
   boom(x,y,r,big||b.type==='atom');
   if(b.type==='atom'){ shakeT=0.9; shakeA=26; flashT=0.6; for(let k=0;k<20;k++) dust.push({x:x+(Math.random()-.5)*r*1.4,y:y+(Math.random()-.5)*r,vx:(Math.random()-.5)*60,vy:-30-Math.random()*60,r0:20+Math.random()*20,l:2+Math.random(),L:3}); }
+  if(b.type==='fire'){ let fy=y; for(let k=0;k<60 && !solidAt(x,fy+2);k++) fy++; fires.push({x,y:fy,by:b.by,turns:2,vy:0,fresh:true}); }
   blastHits(x,y,r,b.by,b.shot,DMG[b.type]||20,direct);
 }
 function detonateMine(m){
@@ -596,7 +640,9 @@ function blastHits(x,y,r,by,shot,full,direct){
     else if(d<reach) dmg=Math.max(2,Math.round(full*(1-d/reach)*0.6));
     if(dmg>0){ any=true; damageApe(ape,dmg,by); }
   }
-  if(shot){ const foe=by?monkey:target; pushLog(`${P} ${desc} → ${any?'hit':Math.round(Math.abs(x-foe.x))+'px off'}`); }
+  if(shot){ const foe=by?monkey:target, dd=Math.hypot(x-foe.x,y-(foe.y-30));
+    pushLog(`${P} ${desc} → ${any?'hit':Math.round(Math.abs(x-foe.x))+'px off'}`);
+    if(dd<170 && !shot.awarded && !roundOver){ shot.awarded=true; awardSpecial(by); } }
 }
 function damageApe(ape,dmg,by){
   ape.hp=Math.max(0,ape.hp-dmg);
@@ -647,6 +693,9 @@ function render(now){
   drawTwinkles(now);
   W2S();
   for(const c of clouds){ ctx.drawImage(c.img,c.x,c.y,320*c.s,140*c.s); }
+  ctx.lineCap='round';
+  for(const st of streaks){ const dir=Math.sign(windNow)||1; ctx.strokeStyle=`rgba(255,255,255,${st.a*(windShow>0?1.6:1)})`; ctx.lineWidth=1.6;
+    ctx.beginPath(); ctx.moveTo(st.x,st.y); ctx.lineTo(st.x-dir*st.len,st.y+Math.sin(st.len)*3); ctx.stroke(); }
   ctx.imageSmoothingEnabled=false;
   ctx.drawImage(bCanvas,0,0);
   ctx.imageSmoothingEnabled=true;
@@ -665,6 +714,9 @@ function render(now){
   for(const c of corpses){ ctx.save(); ctx.translate(c.x,c.y-30); ctx.rotate(c.rot); ctx.translate(0,30);
     drawApe(0,0,{t:T,dir:c.dir,pc:c.pc,pose:'idle',flash:c.t<0.15}); ctx.restore(); }
   // whose turn: small marker over the shooter
+  if(S.turnTime>0 && !roundOver && !bananas.length && !shotActive && sh.alive && turnWait<=0){
+    const tc=Math.ceil(turnClock); ctx.font='bold 30px system-ui'; ctx.textAlign='center';
+    ctx.fillStyle=tc<=3?'#ff5a4e':'#ffffff'; ctx.fillText(tc,sh.x,sh.y-100); }
   if(!roundOver && !bananas.length && !shotActive && sh.alive){ ctx.fillStyle=PCOL[turn]; ctx.beginPath(); const mx=sh.x, my=sh.y-84+Math.sin(now/200)*3; ctx.moveTo(mx-8,my-10); ctx.lineTo(mx+8,my-10); ctx.lineTo(mx,my); ctx.fill(); }
 
   // slingshot band + preview
@@ -682,7 +734,7 @@ function render(now){
       let x=hp0.x,y=hp0.y,vx=Math.cos(pull.ang)*pull.t*S.speed,vy=-Math.sin(pull.ang)*pull.t*S.speed;
       ctx.fillStyle='rgba(255,255,255,.75)';
       for(let i=0;i<70;i++){
-        for(let k=0;k<3;k++){ vx+=wind*0.01; vy+=S.grav*0.01; x+=vx*0.01; y+=vy*0.01; }
+        for(let k=0;k<3;k++){ vx+=windNow*0.01; vy+=S.grav*0.01; x+=vx*0.01; y+=vy*0.01; }
         if(i%2===0){ ctx.globalAlpha=1-i/70; ctx.fillRect(x-2,y-2,4,4); }
         if(solidAt(x,y)) break;
       }
@@ -697,6 +749,12 @@ function render(now){
     const gl=glowSprite(), gs=b.type==='atom'?90:56; ctx.globalAlpha=b.type==='atom'?.8:.55; ctx.drawImage(gl,b.x-gs/2,b.y-6-gs/2,gs,gs); ctx.globalAlpha=1;
     drawBanana(b.x,b.y,b.rot,b.type);
     if(b.y<0){ ctx.fillStyle=typeCol(b.type); ctx.beginPath(); ctx.moveTo(b.x,6); ctx.lineTo(b.x-10,24); ctx.lineTo(b.x+10,24); ctx.fill(); }
+  }
+  for(const f of fires){ // burning patch: flickering flames + glow
+    const gl=glowSprite(); ctx.globalAlpha=.5; ctx.drawImage(gl,f.x-45,f.y-60,90,70); ctx.globalAlpha=1;
+    for(let k=-3;k<=3;k++){ const fl=10+8*Math.abs(Math.sin(now/90+k*1.7)), w=6;
+      ctx.fillStyle=k%2?'#ff6a2b':'#ffb02e'; ctx.beginPath(); ctx.moveTo(f.x+k*8-w,f.y); ctx.lineTo(f.x+k*8,f.y-fl-(3-Math.abs(k))*4); ctx.lineTo(f.x+k*8+w,f.y); ctx.fill(); }
+    ctx.font='bold 14px system-ui'; ctx.textAlign='center'; ctx.fillStyle='rgba(255,220,180,.85)'; ctx.fillText(`🔥${f.turns}`,f.x,f.y-34);
   }
   for(const m of mines){ // banana-peel mine, blinks faster when its fuse burns
     const blink=m.fuse>0 ? (Math.floor(now/90)%2===0) : (Math.floor(now/600)%2===0);
@@ -733,6 +791,11 @@ function render(now){
   ctx.fillStyle=PCOL[0]; ctx.fillText(`P1 ${score[0]}`,WW/2-50,57);
   ctx.fillStyle='#fff'; ctx.fillText(':',WW/2,55);
   ctx.fillStyle=PCOL[1]; ctx.fillText(`${score[1]} P2`,WW/2+50,57);
+  { const L=Math.max(-120,Math.min(120,windNow*1.0)), y0=88, pulse=windShow>0?1:0.75;
+    ctx.strokeStyle=`rgba(255,255,255,${pulse})`; ctx.fillStyle=`rgba(255,255,255,${pulse})`; ctx.lineWidth=4;
+    if(Math.abs(L)>3){ ctx.beginPath(); ctx.moveTo(WW/2-L/2,y0); ctx.lineTo(WW/2+L/2,y0); ctx.stroke();
+      const d=Math.sign(L); ctx.beginPath(); ctx.moveTo(WW/2+L/2+d*10,y0); ctx.lineTo(WW/2+L/2-d*4,y0-8); ctx.lineTo(WW/2+L/2-d*4,y0+8); ctx.fill(); }
+    else { ctx.beginPath(); ctx.arc(WW/2,y0,4,0,7); ctx.fill(); } }
 
   drawHUD();
 }
@@ -765,7 +828,7 @@ function drawHUD(){
   ctx.fillStyle='#fff';
   ctx.fillText(`ANGLE  ${holding?Math.round(pull.ang*180/Math.PI)+'°':'—'}`,x+10,y+46);
   ctx.fillText(`SPEED  ${holding?Math.round(pull.t*S.speed):'—'}`,x+130,y+46);
-  ctx.fillText(`WIND  ${wind>0?'→':wind<0?'←':'·'} ${Math.abs(wind)}`,x+10,y+68);
+  ctx.fillText(`WIND  ${windNow>0.5?'→':windNow<-0.5?'←':'·'} ${Math.abs(Math.round(windNow))}`,x+10,y+68);
   ctx.fillText(mouseMode?'MODE  mouse':(hasSensor?`MODE  ${S.src==='split'&&(hasOri||hasGyro)?'turn+nod':S.src==='move'?'move':S.src==='gyro'&&hasOri?'pose':(S.src==='gyro'&&hasGyro?'gyro':'gravity')} (${sensorRate} Hz)`:'MODE  waiting for sensor'),x+10,y+90);
   ctx.font='12px system-ui'; ctx.fillStyle='rgba(255,255,255,.7)';
   ctx.fillText(mouseMode?`LOCK ${document.pointerLockElement?'ON':'OFF'}   pull ${mouseCur?Math.round(mouseCur.x)+','+Math.round(mouseCur.y):'-'}`:screenAngle()+'° screen',x+10,y+110);
@@ -855,9 +918,10 @@ bindRange('sSpeed','speed',v=>v);
 bindRange('sTremble','tremble',v=>v.toFixed(1));
 bindRange('sTrMax','trMax',v=>'×'+v);
 bindRange('sGrav','grav',v=>v);
+bindRange('sTurnT','turnTime',v=>v?v+' s':'off');
 bindRange('sSmooth','smooth',v=>v.toFixed(2));
 bindChk('cVib','vib'); bindChk('cInvX','invX'); bindChk('cInvY','invY'); bindChk('cPrev','prev');
-bindChk('cWind','wind',()=>{ wind=S.wind?Math.round((Math.random()*2-1)*120):0; });
+bindChk('cWind','wind',()=>{ wind=S.wind?Math.round((Math.random()*2-1)*120):0; streaks=[]; });
 function placeBtn(){ shootBtn.className='btn '+(S.left?'left':'right'); shootBtn.style.display=mouseMode?'none':''; }
 bindChk('cLeft','left',placeBtn);
 
@@ -875,7 +939,7 @@ document.getElementById('bStart').onclick=async()=>{
 resize(); newTrack(); placeBtn(); requestAnimationFrame(loop);
 if('serviceWorker' in navigator && location.protocol==='https:'){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
 // expose for testing
-window.__amc={dbg:{theme(i){theme=THEMES[i];bgCache=null;drawBuildings();initClouds();},noWind(){wind=0;},aimAt(){const sh=shooter(),fo=victim();return {sx:sh.x,sy:sh.y,fx:fo.x,fy:fo.y};},fire(vx,vy,type){const hp=handOf(shooter(),side());bananas=[{x:hp.x,y:hp.y,vx,vy,rot:0,t:0,by:turn,type:type||'std',n:0,shot:{t:0,a:0}}];shotActive=true;shooter().throwT=performance.now();}},get turn(){return turn}, get score(){return score}, S,g,get ref(){return ref},set ref(v){ref=v},startHold,endHold,get banana(){return bananas[0]||null}, get hp(){return [monkey.hp,target.hp]}, get ys(){return [monkey.y,target.y,monkey.falling,target.falling]}, get mines(){return mines}, get ammo(){return ammo},pull,setSensor(){hasSensor=true}};
+window.__amc={dbg:{theme(i){theme=THEMES[i];bgCache=null;drawBuildings();initClouds();},noWind(){wind=0;windNow=0;S.wind=false;},aimAt(){const sh=shooter(),fo=victim();return {sx:sh.x,sy:sh.y,fx:fo.x,fy:fo.y};},fire(vx,vy,type){const hp=handOf(shooter(),side());bananas=[{x:hp.x,y:hp.y,vx,vy,rot:0,t:0,by:turn,type:type||'std',n:0,shot:{t:0,a:0}}];shotActive=true;shooter().throwT=performance.now();}},get turn(){return turn}, get score(){return score}, S,g,get ref(){return ref},set ref(v){ref=v},startHold,endHold,get banana(){return bananas[0]||null}, get hp(){return [monkey.hp,target.hp]}, get ys(){return [monkey.y,target.y,monkey.falling,target.falling]}, get mines(){return mines}, get fires(){return fires}, award(p){awardSpecial(p)}, get ammo(){return ammo},pull,setSensor(){hasSensor=true}};
 </script>
 </body>
 </html>
