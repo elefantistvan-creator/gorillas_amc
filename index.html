@@ -84,7 +84,7 @@
 </div>
 <div id="overlay">
   <h1>AMC TEST TRACK</h1>
-  <p style="font-size:12px;opacity:.6">build 12</p>
+  <p style="font-size:12px;opacity:.6">build 13</p>
   <p>Hold the phone in landscape. <b>Press and hold</b> the orange button — that moment is the zero point.
   Turn the phone sideways, away from the target, for power: further = stronger, and it trembles more. Nod it (top toward you / away) to set the shot height.
   <b>Release</b> to throw.</p>
@@ -740,7 +740,7 @@ function render(now){
       let x=hp0.x,y=hp0.y,vx=Math.cos(pull.ang)*pull.t*S.speed,vy=-Math.sin(pull.ang)*pull.t*S.speed;
       ctx.fillStyle='rgba(255,255,255,.75)';
       for(let i=0;i<70;i++){
-        for(let k=0;k<3;k++){ vx+=windNow*0.01; vy+=S.grav*0.01; x+=vx*0.01; y+=vy*0.01; }
+        for(let k=0;k<3;k++){ /* calm-air preview: wind left out on purpose, the player has to judge it */ vy+=S.grav*0.01; x+=vx*0.01; y+=vy*0.01; }
         if(i%2===0){ ctx.globalAlpha=1-i/70; ctx.fillRect(x-2,y-2,4,4); }
         if(solidAt(x,y)) break;
       }
