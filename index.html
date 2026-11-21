@@ -84,7 +84,7 @@
 </div>
 <div id="overlay">
   <h1>AMC TEST TRACK</h1>
-  <p style="font-size:12px;opacity:.6">build 13</p>
+  <p style="font-size:12px;opacity:.6">build 14</p>
   <p>Hold the phone in landscape. <b>Press and hold</b> the orange button — that moment is the zero point.
   Turn the phone sideways, away from the target, for power: further = stronger, and it trembles more. Nod it (top toward you / away) to set the shot height.
   <b>Release</b> to throw.</p>
@@ -225,12 +225,13 @@ function newTrack(){
   roundOver=false; turnWait=0; monkey.win=target.win=false;
   wind = S.wind ? Math.round((Math.random()*2-1)*120) : 0;
   theme=THEMES[Math.floor(Math.random()*THEMES.length)]; bgCache=null;
-  drawBuildings(); initClouds(); bananas=[]; mines=[]; fires=[]; shotActive=false; turnClock=S.turnTime; gustT=0; parts=[]; trail=[]; debris=[]; dust=[]; corpses=[];
+  drawBuildings(); initClouds(); bananas=[]; mines=[]; fires=[]; chunks=[]; shotActive=false; turnClock=S.turnTime; gustT=0; parts=[]; trail=[]; debris=[]; dust=[]; corpses=[];
   if(typeof resetAmmo==='function' && BTYPES) resetAmmo();
 }
 function drawBuildings(){
   bCanvas=document.createElement('canvas'); bCanvas.width=WW; bCanvas.height=WH; bCtx=bCanvas.getContext('2d');
   for(const b of blds){
+    b.cw=Math.ceil(b.w/CELL); b.ch=Math.ceil(b.h/CELL); b.cells=new Uint8Array(b.cw*b.ch).fill(1);  // solid map
     bCtx.fillStyle=b.col; bCtx.fillRect(b.x,b.y,b.w,b.h);
     bCtx.fillStyle='rgba(0,0,0,.18)'; bCtx.fillRect(b.x+b.w-6,b.y,6,b.h);
     bCtx.fillStyle='rgba(255,255,255,.12)'; bCtx.fillRect(b.x,b.y,b.w,3);           // roof edge
@@ -242,6 +243,8 @@ function drawBuildings(){
     }
   }
 }
+const CELL=4;   // building solidity is a grid of 4 px cells; holes clear cells, loose pieces fall
+let chunks=[];
 function addCrater(x,y,r){
   craters.push({x,y,r});
   // scorched rim: darken the wall around the hole (only where wall exists), so the hole reads clearly
@@ -252,13 +255,67 @@ function addCrater(x,y,r){
   bCtx.globalCompositeOperation='destination-out'; bCtx.fillStyle='#000';
   bCtx.beginPath(); bCtx.arc(x,y,r,0,7); bCtx.fill();
   bCtx.globalCompositeOperation='source-over'; bCtx.fillStyle='#000';
+  // clear the cells inside the hole, then let anything no longer connected to the ground fall
+  for(const b of blds){
+    if(x+r<b.x||x-r>b.x+b.w||y+r<b.y) continue;
+    const i0=Math.max(0,Math.floor((x-r-b.x)/CELL)), i1=Math.min(b.cw-1,Math.floor((x+r-b.x)/CELL));
+    const j0=Math.max(0,Math.floor((y-r-b.y)/CELL)), j1=Math.min(b.ch-1,Math.floor((y+r-b.y)/CELL));
+    for(let j=j0;j<=j1;j++) for(let i=i0;i<=i1;i++){
+      const cx=b.x+(i+.5)*CELL, cy=b.y+(j+.5)*CELL; if((cx-x)*(cx-x)+(cy-y)*(cy-y)<r*r) b.cells[j*b.cw+i]=0; }
+    checkCollapse(b);
+  }
+}
+// flood-fill from the bottom row: solid cells not reached are hanging in the air
+function checkCollapse(b){
+  const W=b.cw,H=b.ch,c=b.cells,seen=new Uint8Array(W*H),st=[];
+  for(let i=0;i<W;i++){ const k=(H-1)*W+i; if(c[k]){ seen[k]=1; st.push(k); } }
+  while(st.length){ const k=st.pop(), i=k%W, j=(k/W)|0;
+    if(i>0&&c[k-1]&&!seen[k-1]){seen[k-1]=1;st.push(k-1);} if(i<W-1&&c[k+1]&&!seen[k+1]){seen[k+1]=1;st.push(k+1);}
+    if(j>0&&c[k-W]&&!seen[k-W]){seen[k-W]=1;st.push(k-W);} if(j<H-1&&c[k+W]&&!seen[k+W]){seen[k+W]=1;st.push(k+W);} }
+  // each loose group becomes one falling chunk
+  for(let k0=0;k0<W*H;k0++){
+    if(!c[k0]||seen[k0]) continue;
+    const comp=[]; st.push(k0); seen[k0]=1;
+    while(st.length){ const k=st.pop(), i=k%W, j=(k/W)|0; comp.push(k);
+      for(const n of [i>0?k-1:-1, i<W-1?k+1:-1, j>0?k-W:-1, j<H-1?k+W:-1]) if(n>=0&&c[n]&&!seen[n]){seen[n]=1;st.push(n);} }
+    makeChunk(b,comp);
+  }
+}
+function makeChunk(b,comp){
+  const W=b.cw; let i0=1e9,i1=-1,j0=1e9,j1=-1;
+  for(const k of comp){ const i=k%W,j=(k/W)|0; if(i<i0)i0=i; if(i>i1)i1=i; if(j<j0)j0=j; if(j>j1)j1=j; }
+  const x=b.x+i0*CELL, y=b.y+j0*CELL, w=(i1-i0+1)*CELL, h=(j1-j0+1)*CELL;
+  const img=document.createElement('canvas'); img.width=w; img.height=h; const g=img.getContext('2d');
+  g.beginPath(); for(const k of comp){ const i=k%W,j=(k/W)|0; g.rect((i-i0)*CELL,(j-j0)*CELL,CELL,CELL); } g.clip();
+  g.drawImage(bCanvas,x,y,w,h,0,0,w,h);
+  for(const k of comp){ const i=k%W,j=(k/W)|0; b.cells[k]=0; bCtx.clearRect(b.x+i*CELL,b.y+j*CELL,CELL,CELL); }
+  // the top row of a building sits on the roof edge: also clear what was drawn just above it (props) if loose
+  chunks.push({img,x,y,w,h,vy:0,rot:0,vr:(Math.random()-.5)*0.6,col:b.col,cells:comp.length});
+}
+function stepChunks(dt){
+  for(const ch of chunks){
+    ch.vy+=S.grav*dt; ch.y+=ch.vy*dt; ch.rot+=ch.vr*dt;
+    const by=ch.y+ch.h;
+    let land=by>=WH;
+    if(!land) for(let sx=ch.x+3; sx<ch.x+ch.w; sx+=8){ if(solidAt(sx,by+1)){ land=true; break; } }
+    if(land){ ch.dead=true; crumble(ch); }
+  }
+  chunks=chunks.filter(c=>!c.dead);
+}
+function crumble(ch){
+  const n=Math.min(40,8+Math.round(ch.cells/25)), cx=ch.x+ch.w/2, cy=ch.y+ch.h;
+  for(let i=0;i<n;i++) debris.push({x:ch.x+Math.random()*ch.w,y:ch.y+Math.random()*ch.h,vx:(Math.random()-.5)*260,vy:-Math.random()*260,s:3+Math.random()*7,rot:Math.random()*6,vr:(Math.random()-.5)*12,l:1.4+Math.random(),c:Math.random()<.75?ch.col:'#2b2b38'});
+  for(let i=0;i<Math.min(12,3+ch.cells/80);i++) dust.push({x:ch.x+Math.random()*ch.w,y:cy-Math.random()*20,vx:(Math.random()-.5)*50,vy:-20-Math.random()*30,r0:12+Math.random()*12,l:1.4+Math.random(),L:2.2});
+  shakeT=Math.max(shakeT,0.3); shakeA=Math.max(shakeA,Math.min(16,4+ch.cells/60)); SND.thud(); SND.boom(Math.min(60,15+ch.cells/30));
+  // an ape underneath gets hit by the falling piece
+  for(const ape of [monkey,target]){ if(ape.alive && ape.x>ch.x-10 && ape.x<ch.x+ch.w+10 && ape.y>ch.y && ape.y<cy+40) damageApe(ape,15,null); }
 }
 function solidAt(x,y){
   if(y>=WH) return true;
   let inB=false;
   for(const b of blds){ if(x>=b.x&&x<b.x+b.w&&y>=b.y){inB=true;break;} }
   if(!inB) return false;
-  for(const c of craters){ const dx=x-c.x,dy=y-c.y; if(dx*dx+dy*dy<c.r*c.r) return false; }
+  for(const b of blds){ if(x>=b.x&&x<b.x+b.w&&y>=b.y){ const i=((x-b.x)/CELL)|0, j=((y-b.y)/CELL)|0; return j<b.ch && b.cells[j*b.cw+i]===1; } }
   return true;
 }
 
@@ -550,6 +607,7 @@ function step(dt){
     if(m.fuse>0){ m.fuse-=dt; if(m.fuse<=0) detonateMine(m); }
   }
   mines=mines.filter(m=>!m.dead);
+  stepChunks(dt);
   apeSupport(dt);
   for(const f of fires){ if(!solidAt(f.x,f.y+2)){ f.vy+=S.grav*dt; f.y+=f.vy*dt; } else f.vy=0; }
   fires=fires.filter(f=>f.y<WH+40);
@@ -564,7 +622,7 @@ function step(dt){
   for(const f of floaters){ f.t+=dt; f.y-=40*dt; }
   floaters=floaters.filter(f=>f.t<1.4);
   // the shot is over when nothing is flying any more
-  if(shotActive && !bananas.length && !roundOver && !monkey.falling && !target.falling){ shotActive=false; nextTurn(); }
+  if(shotActive && !bananas.length && !roundOver && !monkey.falling && !target.falling && !chunks.length){ shotActive=false; nextTurn(); }
   for(const p of parts){ p.vx*=0.98; p.vy+=600*dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.l-=dt; }
   for(const d of debris){ d.vy+=1100*dt; d.x+=d.vx*dt; d.y+=d.vy*dt; d.rot+=d.vr*dt; d.l-=dt;
     if(solidAt(d.x,d.y) && d.vy>0){ d.y-=d.vy*dt; d.vy*=-0.28; d.vx*=0.6; d.vr*=0.5; } }
@@ -704,6 +762,7 @@ function render(now){
     ctx.beginPath(); ctx.moveTo(st.x,st.y); ctx.lineTo(st.x-dir*st.len,st.y+Math.sin(st.len)*3); ctx.stroke(); }
   ctx.imageSmoothingEnabled=false;
   ctx.drawImage(bCanvas,0,0);
+  for(const ch of chunks){ ctx.save(); ctx.translate(ch.x+ch.w/2,ch.y+ch.h/2); ctx.rotate(ch.rot); ctx.drawImage(ch.img,-ch.w/2,-ch.h/2); ctx.restore(); }
   ctx.imageSmoothingEnabled=true;
 
   // apes
@@ -1030,7 +1089,7 @@ resize(); newTrack(); placeBtn(); requestAnimationFrame(loop);
 if('serviceWorker' in navigator && location.protocol==='https:'){ navigator.serviceWorker.register('sw.js').catch(()=>{});
   let reloaded=false; navigator.serviceWorker.addEventListener('controllerchange',()=>{ if(!reloaded){ reloaded=true; location.reload(); } }); }
 // expose for testing
-window.__amc={dbg:{theme(i){theme=THEMES[i];bgCache=null;drawBuildings();initClouds();},noWind(){wind=0;windNow=0;S.wind=false;},aimAt(){const sh=shooter(),fo=victim();return {sx:sh.x,sy:sh.y,fx:fo.x,fy:fo.y};},fire(vx,vy,type){const hp=handOf(shooter(),side());bananas=[{x:hp.x,y:hp.y,vx,vy,rot:0,t:0,by:turn,type:type||'std',n:0,shot:{t:0,a:0}}];shotActive=true;shooter().throwT=performance.now();}},get turn(){return turn}, get score(){return score}, S,g,get ref(){return ref},set ref(v){ref=v},startHold,endHold,get banana(){return bananas[0]||null}, get hp(){return [monkey.hp,target.hp]}, get ys(){return [monkey.y,target.y,monkey.falling,target.falling]}, get mines(){return mines}, get fires(){return fires}, award(p){awardSpecial(p)}, get ammo(){return ammo},pull,setSensor(){hasSensor=true}};
+window.__amc={dbg:{theme(i){theme=THEMES[i];bgCache=null;drawBuildings();initClouds();},noWind(){wind=0;windNow=0;S.wind=false;},crater(x,y,r){addCrater(x,y,r);},aimAt(){const sh=shooter(),fo=victim();return {sx:sh.x,sy:sh.y,fx:fo.x,fy:fo.y};},fire(vx,vy,type){const hp=handOf(shooter(),side());bananas=[{x:hp.x,y:hp.y,vx,vy,rot:0,t:0,by:turn,type:type||'std',n:0,shot:{t:0,a:0}}];shotActive=true;shooter().throwT=performance.now();}},get turn(){return turn}, get score(){return score}, S,g,get ref(){return ref},set ref(v){ref=v},startHold,endHold,get banana(){return bananas[0]||null}, get hp(){return [monkey.hp,target.hp]}, get ys(){return [monkey.y,target.y,monkey.falling,target.falling]}, get mines(){return mines}, get fires(){return fires}, award(p){awardSpecial(p)}, get ammo(){return ammo},pull,setSensor(){hasSensor=true}};
 </script>
 </body>
 </html>
