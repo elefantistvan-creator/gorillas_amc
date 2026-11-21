@@ -201,6 +201,26 @@ const HAND={dx:22,dy:-60};
 let hasSensor=false, sensorEvents=0, sensorRate=0, lastRateT=0;
 const g={x:0,y:0,z:0}; let ref=null;
 let hasGyro=false; const rot={x:0,y:0}; let lastMotionT=0;
+// fused orientation (deviceorientation): compare the current pose to the pose at the press
+let hasOri=false, ori=null, R0=null;
+function rotMat(a,b,g){ // W3C: R = Rz(alpha)·Rx(beta)·Ry(gamma), device -> world
+  const d=Math.PI/180, ca=Math.cos(a*d), sa=Math.sin(a*d), cb=Math.cos(b*d), sb=Math.sin(b*d), cg=Math.cos(g*d), sg=Math.sin(g*d);
+  return [ca*cg-sa*sb*sg, -cb*sa, ca*sg+cg*sa*sb,
+          cg*sa+ca*sb*sg,  ca*cb, sa*sg-ca*cg*sb,
+          -cb*sg,          sb,    cb*cg];
+}
+function relRotVec(A,B){ // rotation vector (deg) of A^T·B, in the device frame at the press
+  const m=(i,j)=>A[0*3+i]*B[0*3+j]+A[1*3+i]*B[1*3+j]+A[2*3+i]*B[2*3+j];
+  const r00=m(0,0),r11=m(1,1),r22=m(2,2);
+  const c=Math.max(-1,Math.min(1,(r00+r11+r22-1)/2)), th=Math.acos(c);
+  const k = th<1e-6 ? 0.5 : th/(2*Math.sin(th));
+  const f=180/Math.PI*k*2; // th/sin(th) * axis_unnormalised/2 -> radians, then deg
+  return { x:(m(2,1)-m(1,2))*f/2, y:(m(0,2)-m(2,0))*f/2, z:(m(1,0)-m(0,1))*f/2 };
+}
+function onOrient(e){
+  if(e.beta==null||e.gamma==null) return;
+  hasOri=true; ori={a:e.alpha||0,b:e.beta,g:e.gamma};
+}
 function onMotion(e){
   const a=e.accelerationIncludingGravity; if(!a||a.x==null) return;
   hasSensor=true; sensorEvents++;
@@ -209,7 +229,7 @@ function onMotion(e){
   if(rr && rr.beta!=null){
     hasGyro=true;
     if(holding){ // integrate rotation since the press (deg); tiny rates ignored against drift
-      const dz=0.4, bx=Math.abs(rr.beta)<dz?0:rr.beta, gy=Math.abs(rr.gamma)<dz?0:rr.gamma;
+      const dz=0.05, bx=Math.abs(rr.beta)<dz?0:rr.beta, gy=Math.abs(rr.gamma)<dz?0:rr.gamma;
       rot.x+=bx*dt; rot.y+=gy*dt;
     }
   }
@@ -236,7 +256,7 @@ function noise(t,o){ return Math.sin(t*13.1+nPh[o])*.5+Math.sin(t*21.7+nPh[o+1])
 function startHold(){
   if(banana) return;
   holding=true; holdT0=performance.now();
-  if(hasSensor && !mouseMode){ ref={x:g.x,y:g.y,z:g.z}; rot.x=0; rot.y=0; gsm.x=0; gsm.y=0; }
+  if(hasSensor && !mouseMode){ ref={x:g.x,y:g.y,z:g.z}; rot.x=0; rot.y=0; gsm.x=0; gsm.y=0; R0=(hasOri&&ori)?rotMat(ori.a,ori.b,ori.g):null; }
   vib(15);
   shootBtn.classList.add('held');
 }
@@ -255,9 +275,11 @@ function computePull(now){
     dx=(mouseCur.x-mouseRef.x)/scale; dy=-(mouseCur.y-mouseRef.y)/scale; // pull vector, y up
     const m=Math.hypot(dx,dy); tension=Math.min(1,m/mouseFull());
     if(m>0.001){ dirx=-dx/m; diry=-dy/m; }
-  } else if(S.src==='gyro' && hasGyro){
+  } else if(S.src==='gyro' && (hasOri||hasGyro)){
     // rotation about screen x = pitch (top toward you), about screen y = turn left/right
-    const r=toScreen({x:rot.x,y:rot.y});
+    let rv={x:rot.x,y:rot.y};
+    if(hasOri&&R0&&ori){ rv=relRotVec(R0,rotMat(ori.a,ori.b,ori.g)); }
+    const r=toScreen({x:rv.x,y:rv.y});
     let px=r.y, py=-r.x;                  // turn = sideways pull, top-toward-you = pull down
     if(S.invX) px=-px; if(S.invY) py=-py;
     const k=Math.min(1,S.smooth*2); gsm.x+=(px-gsm.x)*k; gsm.y+=(py-gsm.y)*k;
@@ -397,7 +419,7 @@ function drawHUD(){
   ctx.fillText(`ANGLE  ${holding?Math.round(pull.ang*180/Math.PI)+'°':'—'}`,x+10,y+46);
   ctx.fillText(`SPEED  ${holding?Math.round(pull.t*S.speed):'—'}`,x+130,y+46);
   ctx.fillText(`WIND  ${wind>0?'→':wind<0?'←':'·'} ${Math.abs(wind)}`,x+10,y+68);
-  ctx.fillText(mouseMode?'MODE  mouse':(hasSensor?`MODE  ${S.src==='gyro'&&hasGyro?'gyro':'gravity'} (${sensorRate} Hz)`:'MODE  waiting for sensor'),x+10,y+90);
+  ctx.fillText(mouseMode?'MODE  mouse':(hasSensor?`MODE  ${S.src==='gyro'&&hasOri?'pose':(S.src==='gyro'&&hasGyro?'gyro':'gravity')} (${sensorRate} Hz)`:'MODE  waiting for sensor'),x+10,y+90);
   ctx.font='12px system-ui'; ctx.fillStyle='rgba(255,255,255,.7)';
   ctx.fillText(mouseMode?`LOCK ${document.pointerLockElement?'ON':'OFF'}   pull ${mouseCur?Math.round(mouseCur.x)+','+Math.round(mouseCur.y):'-'}`:screenAngle()+'° screen',x+10,y+110);
   // log
@@ -472,6 +494,7 @@ bindChk('cLeft','left',placeBtn);
 document.getElementById('bStart').onclick=async()=>{
   try{ if(typeof DeviceMotionEvent!=='undefined' && DeviceMotionEvent.requestPermission){ await DeviceMotionEvent.requestPermission(); } }catch(e){}
   window.addEventListener('devicemotion',onMotion);
+  window.addEventListener('deviceorientation',onOrient);
   try{ if(document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen(); }catch(e){}
   try{ if(screen.orientation&&screen.orientation.lock) await screen.orientation.lock('landscape'); }catch(e){}
   document.getElementById('overlay').style.display='none';
