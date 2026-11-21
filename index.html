@@ -49,7 +49,9 @@
 </div>
 <div id="panel">
   <h3>AMC settings</h3>
-  <label>Max tilt (full tension) <span><input type="range" id="sTilt" min="2" max="9" step="0.5"><b id="vTilt"></b></span></label>
+  <label>Sensor <select id="selSrc"><option value="gyro">Gyro (turn)</option><option value="tilt">Gravity (tilt)</option></select></label>
+  <label>Max turn (gyro) <span><input type="range" id="sTurn" min="8" max="60" step="1"><b id="vTurn"></b></span></label>
+  <label>Max tilt (gravity) <span><input type="range" id="sTilt" min="2" max="9" step="0.5"><b id="vTilt"></b></span></label>
   <label>Max throw speed <span><input type="range" id="sSpeed" min="600" max="1800" step="50"><b id="vSpeed"></b></span></label>
   <label>Tremble <span><input type="range" id="sTremble" min="0" max="2" step="0.1"><b id="vTremble"></b></span></label>
   <label>Gravity <span><input type="range" id="sGrav" min="400" max="1600" step="50"><b id="vGrav"></b></span></label>
@@ -76,7 +78,7 @@
 <script>
 'use strict';
 // ---------- settings ----------
-const DEF={tilt:5,speed:1150,tremble:1,grav:900,smooth:0.3,vib:true,invX:false,invY:false,prev:true,wind:true,left:false};
+const DEF={src:'gyro',turn:25,tilt:5,speed:1150,tremble:1,grav:900,smooth:0.3,vib:true,invX:false,invY:false,prev:true,wind:true,left:false};
 let S=Object.assign({},DEF);
 try{const j=JSON.parse(localStorage.getItem('amc_settings')||'null'); if(j) Object.assign(S,j);}catch(e){}
 function saveS(){try{localStorage.setItem('amc_settings',JSON.stringify(S));}catch(e){}}
@@ -198,9 +200,19 @@ const HAND={dx:22,dy:-60};
 // ---------- motion sensor ----------
 let hasSensor=false, sensorEvents=0, sensorRate=0, lastRateT=0;
 const g={x:0,y:0,z:0}; let ref=null;
+let hasGyro=false; const rot={x:0,y:0}; let lastMotionT=0;
 function onMotion(e){
   const a=e.accelerationIncludingGravity; if(!a||a.x==null) return;
   hasSensor=true; sensorEvents++;
+  const now=performance.now(); const dt=lastMotionT?Math.min(0.1,(now-lastMotionT)/1000):0; lastMotionT=now;
+  const rr=e.rotationRate;
+  if(rr && rr.beta!=null){
+    hasGyro=true;
+    if(holding){ // integrate rotation since the press (deg); tiny rates ignored against drift
+      const dz=0.4, bx=Math.abs(rr.beta)<dz?0:rr.beta, gy=Math.abs(rr.gamma)<dz?0:rr.gamma;
+      rot.x+=bx*dt; rot.y+=gy*dt;
+    }
+  }
   const k=S.smooth;
   g.x+=(a.x-g.x)*k; g.y+=(a.y-g.y)*k; g.z+=(a.z-g.z)*k;
 }
@@ -216,6 +228,7 @@ function toScreen(v){ // device x/y -> screen x(right)/y(up)
 // ---------- shot state ----------
 let holding=false, holdT0=0, mouseMode=false, mouseRef=null, mouseCur=null;
 let pull={x:0,y:0,t:0,ang:0}; // live aim
+const gsm={x:0,y:0}; // smoothed gyro pull
 let banana=null, trail=[], parts=[], flashT=0, hitText='', hitT=0, wind=0, log=[];
 const nPh=[Math.random()*6,Math.random()*6,Math.random()*6,Math.random()*6];
 function noise(t,o){ return Math.sin(t*13.1+nPh[o])*.5+Math.sin(t*21.7+nPh[o+1])*.3+Math.sin(t*34.3+nPh[o]*2)*.2; }
@@ -223,7 +236,7 @@ function noise(t,o){ return Math.sin(t*13.1+nPh[o])*.5+Math.sin(t*21.7+nPh[o+1])
 function startHold(){
   if(banana) return;
   holding=true; holdT0=performance.now();
-  if(hasSensor && !mouseMode){ ref={x:g.x,y:g.y,z:g.z}; }
+  if(hasSensor && !mouseMode){ ref={x:g.x,y:g.y,z:g.z}; rot.x=0; rot.y=0; gsm.x=0; gsm.y=0; }
   vib(15);
   shootBtn.classList.add('held');
 }
@@ -242,6 +255,17 @@ function computePull(now){
     dx=(mouseCur.x-mouseRef.x)/scale; dy=-(mouseCur.y-mouseRef.y)/scale; // pull vector, y up
     const m=Math.hypot(dx,dy); tension=Math.min(1,m/mouseFull());
     if(m>0.001){ dirx=-dx/m; diry=-dy/m; }
+  } else if(S.src==='gyro' && hasGyro){
+    // rotation about screen x = pitch (top toward you), about screen y = turn left/right
+    const r=toScreen({x:rot.x,y:rot.y});
+    let px=r.y, py=-r.x;                  // turn = sideways pull, top-toward-you = pull down
+    if(S.invX) px=-px; if(S.invY) py=-py;
+    const k=Math.min(1,S.smooth*2); gsm.x+=(px-gsm.x)*k; gsm.y+=(py-gsm.y)*k;
+    px=gsm.x; py=gsm.y;
+    const m=Math.hypot(px,py), dead=1.0;
+    tension=Math.min(1,Math.max(0,(m-dead)/(S.turn-dead)));
+    if(m>0.001){ dirx=-px/m; diry=-py/m; }
+    dx=px; dy=py;
   } else {
     if(!ref){ pull.t=0; return; }
     const d=toScreen({x:g.x-ref.x,y:g.y-ref.y});
@@ -373,7 +397,7 @@ function drawHUD(){
   ctx.fillText(`ANGLE  ${holding?Math.round(pull.ang*180/Math.PI)+'°':'—'}`,x+10,y+46);
   ctx.fillText(`SPEED  ${holding?Math.round(pull.t*S.speed):'—'}`,x+130,y+46);
   ctx.fillText(`WIND  ${wind>0?'→':wind<0?'←':'·'} ${Math.abs(wind)}`,x+10,y+68);
-  ctx.fillText(mouseMode?'MODE  mouse':(hasSensor?`MODE  motion (${sensorRate} Hz)`:'MODE  waiting for sensor'),x+10,y+90);
+  ctx.fillText(mouseMode?'MODE  mouse':(hasSensor?`MODE  ${S.src==='gyro'&&hasGyro?'gyro':'gravity'} (${sensorRate} Hz)`:'MODE  waiting for sensor'),x+10,y+90);
   ctx.font='12px system-ui'; ctx.fillStyle='rgba(255,255,255,.7)';
   ctx.fillText(mouseMode?`LOCK ${document.pointerLockElement?'ON':'OFF'}   pull ${mouseCur?Math.round(mouseCur.x)+','+Math.round(mouseCur.y):'-'}`:screenAngle()+'° screen',x+10,y+110);
   // log
@@ -397,7 +421,7 @@ function updDbg(){
   const d=ref?toScreen({x:g.x-ref.x,y:g.y-ref.y}):{x:0,y:0};
   document.getElementById('dbg').innerHTML=
     `rate: ${sensorRate} Hz<br>g: ${g.x.toFixed(2)} ${g.y.toFixed(2)} ${g.z.toFixed(2)}<br>`+
-    `Δscreen: ${d.x.toFixed(2)} ${d.y.toFixed(2)}<br>tilt ≈ ${Math.round(Math.asin(Math.min(1,Math.hypot(d.x,d.y)/9.81))*180/Math.PI)}°`;
+    `Δscreen: ${d.x.toFixed(2)} ${d.y.toFixed(2)}<br>gyro: ${hasGyro?'yes':'no'}  rot ${rot.x.toFixed(1)}° ${rot.y.toFixed(1)}°<br>tilt ≈ ${Math.round(Math.asin(Math.min(1,Math.hypot(d.x,d.y)/9.81))*180/Math.PI)}°`;
 }
 
 // ---------- input ----------
@@ -433,6 +457,8 @@ document.getElementById('bSet').onclick=()=>document.getElementById('panel').cla
 function bindRange(id,key,fmt){ const el=document.getElementById(id), v=document.getElementById('v'+id.slice(1));
   el.value=S[key]; v.textContent=fmt(S[key]); el.oninput=()=>{ S[key]=parseFloat(el.value); v.textContent=fmt(S[key]); saveS(); }; }
 function bindChk(id,key,cb){ const el=document.getElementById(id); el.checked=!!S[key]; el.onchange=()=>{ S[key]=el.checked; saveS(); cb&&cb(); }; }
+bindRange('sTurn','turn',v=>v+'°');
+{ const el=document.getElementById('selSrc'); el.value=S.src; el.onchange=()=>{ S.src=el.value; saveS(); }; }
 bindRange('sTilt','tilt',v=>Math.round(Math.asin(Math.min(1,v/9.81))*180/Math.PI)+'°');
 bindRange('sSpeed','speed',v=>v);
 bindRange('sTremble','tremble',v=>v.toFixed(1));
