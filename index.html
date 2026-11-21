@@ -15,12 +15,12 @@
   .btn{position:fixed;border:0;color:#fff;font-weight:700;letter-spacing:.05em;
     background:rgba(20,24,40,.55);border-radius:10px;padding:10px 14px;font-size:14px;
     -webkit-tap-highlight-color:transparent}
-  #shoot{bottom:22px;width:130px;height:130px;border-radius:50%;font-size:18px;
+  #shoot{bottom:16px;width:66px;height:66px;border-radius:50%;font-size:12px;padding:0;
     background:radial-gradient(circle at 35% 30%,#ff9a3c,#c2410c 70%);
     box-shadow:0 0 0 4px rgba(255,255,255,.25)}
-  #shoot.right{right:22px} #shoot.left{left:22px}
+  #shoot.right{right:22vw} #shoot.left{left:22vw}
   #shoot.held{background:radial-gradient(circle at 35% 30%,#ffd166,#e85d04 70%);
-    box-shadow:0 0 0 8px rgba(255,209,102,.45)}
+    box-shadow:0 0 0 6px rgba(255,209,102,.45)}
   #top{position:fixed;top:10px;right:10px;display:flex;gap:8px}
   #top .btn{position:static}
   #panel{position:fixed;top:56px;right:10px;width:290px;max-height:calc(100vh - 70px);
@@ -44,7 +44,7 @@
 <button id="shoot" class="btn right">HOLD</button>
 <div id="top">
   <button class="btn" id="bNew">NEW TRACK</button>
-  <button class="btn" id="bCal">ZERO</button>
+  <button class="btn" id="bCal">RESET</button>
   <button class="btn" id="bSet">⚙</button>
 </div>
 <div id="panel">
@@ -59,6 +59,7 @@
   <label>Max tilt (gravity) <span><input type="range" id="sTilt" min="2" max="9" step="0.5"><b id="vTilt"></b></span></label>
   <label>Max throw speed <span><input type="range" id="sSpeed" min="600" max="1800" step="50"><b id="vSpeed"></b></span></label>
   <label>Tremble <span><input type="range" id="sTremble" min="0" max="2" step="0.1"><b id="vTremble"></b></span></label>
+  <label>Tremble max (long aim) <span><input type="range" id="sTrMax" min="1" max="8" step="0.5"><b id="vTrMax"></b></span></label>
   <label>Gravity <span><input type="range" id="sGrav" min="400" max="1600" step="50"><b id="vGrav"></b></span></label>
   <label>Smoothing <span><input type="range" id="sSmooth" min="0.05" max="1" step="0.05"><b id="vSmooth"></b></span></label>
   <label>Vibration <input type="checkbox" id="cVib"></label>
@@ -83,7 +84,7 @@
 <script>
 'use strict';
 // ---------- settings ----------
-const DEF={ver:5,src:'split',spTurn:30,spTilt:30,moveX:20,moveY:15,leak:1.5,turn:25,tilt:5,speed:1150,tremble:1,grav:900,smooth:0.3,vib:true,invX:false,invY:false,prev:true,wind:true,left:false};
+const DEF={ver:6,trMax:4,src:'split',spTurn:30,spTilt:30,moveX:20,moveY:15,leak:1.5,turn:25,tilt:5,speed:1150,tremble:1,grav:900,smooth:0.3,vib:true,invX:false,invY:false,prev:true,wind:true,left:false};
 let S=Object.assign({},DEF);
 try{const j=JSON.parse(localStorage.getItem('amc_settings')||'null'); if(j && j.ver===DEF.ver) Object.assign(S,j);}catch(e){}
 function saveS(){try{localStorage.setItem('amc_settings',JSON.stringify(S));}catch(e){}}
@@ -146,7 +147,14 @@ function buildBg(){
 // ---------- buildings (the "cheap" layer) ----------
 const PAL=['#3aa6a0','#b5473a','#8a8f99','#c9a227','#5d6fb0','#9c5d8a'];
 let blds=[], craters=[], bCanvas=null, bCtx=null;
-let monkey={x:0,y:0}, target={x:0,y:0,alive:true};
+let monkey={x:0,y:0,alive:true}, target={x:0,y:0,alive:true};
+// game: two apes take turns. turn 0 = left ape (P1) throws right, turn 1 = right ape (P2) throws left
+let turn=0, score=[0,0], roundOver=false, nextStarter=1, turnWait=0;
+function shooter(){ return turn?target:monkey; }
+function victim(){ return turn?monkey:target; }
+function side(){ return turn?-1:1; }
+function handOf(ape,sd){ return {x:ape.x+sd*HAND.dx, y:ape.y+HAND.dy}; }
+const PCOL=['#7dd3fc','#fca5a5'];
 function newTrack(){
   blds=[]; craters=[];
   let x=0;
@@ -156,8 +164,9 @@ function newTrack(){
     blds.push({x,y:WH-h,w,h,col:PAL[Math.floor(Math.random()*PAL.length)]}); x+=w+2;
   }
   const mb=blds[1], tb=blds[blds.length-2];
-  monkey={x:mb.x+mb.w/2,y:mb.y};
+  monkey={x:mb.x+mb.w/2,y:mb.y,alive:true};
   target={x:tb.x+tb.w/2,y:tb.y,alive:true};
+  roundOver=false; turnWait=0;
   wind = S.wind ? Math.round((Math.random()*2-1)*120) : 0;
   drawBuildings(); initClouds(); banana=null; parts=[]; trail=[];
 }
@@ -187,8 +196,8 @@ function solidAt(x,y){
 }
 
 // ---------- gorilla sprite (blocky, own design) ----------
-function drawApe(x,y,armUp,flash){
-  ctx.save(); ctx.translate(x,y);
+function drawApe(x,y,armUp,flash,dir,pc){
+  ctx.save(); ctx.translate(x,y); if(dir<0) ctx.scale(-1,1);
   const c=flash?'#fff':'#6b3f1d', f='#d9a066';
   ctx.fillStyle=c;
   ctx.fillRect(-14,-58,28,14);      // head
@@ -198,6 +207,7 @@ function drawApe(x,y,armUp,flash){
   if(armUp){ ctx.fillRect(18,-62,8,22);} else { ctx.fillRect(18,-42,8,22);} // throwing arm
   ctx.fillStyle=f; ctx.fillRect(-8,-54,16,8); ctx.fillRect(-10,-38,20,14);
   ctx.fillStyle='#111'; ctx.fillRect(-6,-54,3,3); ctx.fillRect(3,-54,3,3);
+  if(pc){ ctx.fillStyle=pc; ctx.fillRect(-18,-20,36,4); } // player belt
   ctx.restore();
 }
 const HAND={dx:22,dy:-60};
@@ -278,7 +288,7 @@ const nPh=[Math.random()*6,Math.random()*6,Math.random()*6,Math.random()*6];
 function noise(t,o){ return Math.sin(t*13.1+nPh[o])*.5+Math.sin(t*21.7+nPh[o+1])*.3+Math.sin(t*34.3+nPh[o]*2)*.2; }
 
 function startHold(){
-  if(banana) return;
+  if(banana||roundOver||turnWait>0) return;
   holding=true; holdT0=performance.now();
   if(hasSensor && !mouseMode){ ref={x:g.x,y:g.y,z:g.z}; rot.x=0; rot.y=0; gsm.x=0; gsm.y=0; mv.vx=mv.vy=mv.px=mv.py=0; R0=(hasOri&&ori)?rotMat(ori.a,ori.b,ori.g):null; }
   vib(15);
@@ -288,7 +298,8 @@ function endHold(){
   if(!holding) return; holding=false; shootBtn.classList.remove('held');
   if(pull.t<0.05){ pushLog('cancel (no tension)'); return; }
   const v=pull.t*S.speed, a=pull.ang;
-  banana={x:monkey.x+HAND.dx,y:monkey.y+HAND.dy,vx:Math.cos(a)*v,vy:-Math.sin(a)*v,rot:0,t:0};
+  const hp=handOf(shooter(),side());
+  banana={x:hp.x,y:hp.y,vx:Math.cos(a)*v,vy:-Math.sin(a)*v,rot:0,t:0,by:turn};
   banana.shot={t:Math.round(pull.t*100),a:Math.round(a*180/Math.PI)};
   trail=[]; vib(30);
 }
@@ -304,22 +315,22 @@ function computePull(now){
     let rv={x:rot.x,y:rot.y};
     if(hasOri&&R0&&ori){ rv=relRotVec(R0,rotMat(ori.a,ori.b,ori.g)); }
     const r=toScreen({x:rv.x,y:rv.y});
-    let turn=-r.y, nod=r.x;               // turn away from the target = power, top toward you = higher
-    if(S.invX) turn=-turn; if(S.invY) nod=-nod;
-    const k=Math.min(1,S.smooth*2); gsm.x+=(turn-gsm.x)*k; gsm.y+=(nod-gsm.y)*k;
+    let tw=-r.y*side(), nod=r.x;          // turn away from the current target = power, top toward you = higher
+    if(S.invX) tw=-tw; if(S.invY) nod=-nod;
+    const k=Math.min(1,S.smooth*2); gsm.x+=(tw-gsm.x)*k; gsm.y+=(nod-gsm.y)*k;
     tension=Math.max(0,Math.min(1,(gsm.x-1)/(S.spTurn-1)));
     const h=Math.max(-1,Math.min(1,gsm.y/S.spTilt));
     const angDeg=Math.max(2,Math.min(85,45+h*43));
-    dirx=Math.cos(angDeg*Math.PI/180); diry=Math.sin(angDeg*Math.PI/180);
+    dirx=side()*Math.cos(angDeg*Math.PI/180); diry=Math.sin(angDeg*Math.PI/180);
     dx=gsm.x; dy=gsm.y;
   } else if(S.src==='move'){
     // sideways (away from the target) = tension, up/down = shot height. No rotation used.
-    let hx=-mv.px, vy=-mv.py;            // move left = pull, move down = higher shot
+    let hx=-mv.px*side(), vy=-mv.py;     // move away from the target = pull, move down = higher shot
     if(S.invX) hx=-hx; if(S.invY) vy=-vy;
     tension=Math.max(0,Math.min(1,hx/(S.moveX/100)));
     const h=Math.max(-1,Math.min(1,vy/(S.moveY/100)));
     const angDeg=Math.max(2,Math.min(85,45+h*43));
-    dirx=Math.cos(angDeg*Math.PI/180); diry=Math.sin(angDeg*Math.PI/180);
+    dirx=side()*Math.cos(angDeg*Math.PI/180); diry=Math.sin(angDeg*Math.PI/180);
     dx=mv.px*100; dy=mv.py*100;          // cm, for the debug panel
   } else if(S.src==='gyro' && (hasOri||hasGyro)){
     // rotation about screen x = pitch (top toward you), about screen y = turn left/right
@@ -344,8 +355,10 @@ function computePull(now){
     if(m>0.001){ dirx=-px/m; diry=-py/m; }
     dx=px; dy=py;
   }
-  // tremble: grows with tension²
-  const tt=now/1000, tr=S.tremble*tension*tension;
+  // tremble: grows with tension² and with aiming time (up to the menu max)
+  const held=(now-holdT0)/1000, tf=Math.min(S.trMax, 1+0.5*held);
+  pull.tf=tf;
+  const tt=now/1000, tr=S.tremble*tension*tension*tf;
   const angJ=tr*noise(tt,0)*(7*Math.PI/180);
   const tenJ=tr*noise(tt,2)*0.03;
   pull.ang=Math.atan2(diry,dirx)+angJ;
@@ -365,27 +378,35 @@ function step(dt){
     const sub=4, h=dt/sub;
     for(let i=0;i<sub&&banana;i++){
       b.vx+=wind*h; b.vy+=S.grav*h; b.x+=b.vx*h; b.y+=b.vy*h; b.rot+=h*14;
-      if(target.alive && Math.hypot(b.x-target.x,b.y-(target.y-30))<30){
-        boom(b.x,b.y,60,true); target.alive=false; hitText='HIT!'; hitT=1.8;
-        pushLog(`T ${b.shot.t}%  A ${b.shot.a}°  → HIT`); banana=null; break;
+      const me=b.by?target:monkey, foe=b.by?monkey:target, P=`P${b.by+1}`;
+      if(foe.alive && Math.hypot(b.x-foe.x,b.y-(foe.y-30))<30){
+        boom(b.x,b.y,60,true); foe.alive=false; score[b.by]++;
+        hitText=`${P} HIT!`; hitT=2.2; endRound();
+        pushLog(`${P} T ${b.shot.t}% A ${b.shot.a}° → HIT`); banana=null; break;
       }
-      if(b.t>0.25 && Math.hypot(b.x-monkey.x,b.y-(monkey.y-30))<26){
-        boom(b.x,b.y,50,true); hitText='OWN GOAL'; hitT=1.8;
-        pushLog(`T ${b.shot.t}%  A ${b.shot.a}°  → self`); banana=null; break;
+      if(b.t>0.25 && me.alive && Math.hypot(b.x-me.x,b.y-(me.y-30))<26){
+        boom(b.x,b.y,50,true); me.alive=false; score[1-b.by]++;
+        hitText='OWN GOAL'; hitT=2.2; endRound();
+        pushLog(`${P} T ${b.shot.t}% A ${b.shot.a}° → self`); banana=null; break;
       }
       if(solidAt(b.x,b.y)){
         boom(b.x,b.y,28,false);
-        const dist=Math.round(Math.abs(b.x-target.x));
-        pushLog(`T ${b.shot.t}%  A ${b.shot.a}°  → ${dist}px from target`); banana=null; break;
+        const dist=Math.round(Math.abs(b.x-foe.x));
+        pushLog(`${P} T ${b.shot.t}% A ${b.shot.a}° → ${dist}px off`); banana=null; nextTurn(); break;
       }
-      if(b.x<-300||b.x>WW+300){ pushLog(`T ${b.shot.t}%  A ${b.shot.a}°  → out`); banana=null; break; }
+      if(b.x<-300||b.x>WW+300){ pushLog(`${P} T ${b.shot.t}% A ${b.shot.a}° → out`); banana=null; nextTurn(); break; }
     }
     if(banana){ trail.push({x:b.x,y:b.y}); if(trail.length>28) trail.shift(); }
   }
   for(const p of parts){ p.vx*=0.98; p.vy+=600*dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.l-=dt; }
   parts=parts.filter(p=>p.l>0);
   if(flashT>0) flashT-=dt; if(hitT>0) hitT-=dt;
+  if(turnWait>0){ turnWait-=dt; if(turnWait<=0){ turnWait=0; if(roundOver){ newTrack(); turn=nextStarter; nextStarter=1-nextStarter; bannerT=1.2; } } }
+  if(bannerT>0) bannerT-=dt;
 }
+let bannerT=1.2;
+function nextTurn(){ turn=1-turn; turnWait=0.7; bannerT=1.4; }
+function endRound(){ roundOver=true; turnWait=2.4; }
 function boom(x,y,r,big){
   addCrater(x,y,r); flashT=big?0.35:0.18; vib(big?[60,40,90]:40);
   for(let i=0;i<(big?60:26);i++){
@@ -407,13 +428,16 @@ function render(now){
   ctx.imageSmoothingEnabled=true;
 
   // apes
-  const shakeA = holding ? S.tremble*pull.t*pull.t*2.5 : 0;
-  drawApe(monkey.x+(Math.random()-.5)*shakeA, monkey.y, holding, false);
-  if(target.alive) drawApe(target.x,target.y,false,false);
+  const shakeA = holding ? S.tremble*pull.t*pull.t*(pull.tf||1)*2.5 : 0;
+  const sh=shooter(), jx=(Math.random()-.5)*shakeA;
+  if(monkey.alive) drawApe(monkey.x+(sh===monkey?jx:0), monkey.y, holding&&turn===0, false, 1, PCOL[0]);
+  if(target.alive) drawApe(target.x+(sh===target?jx:0), target.y, holding&&turn===1, false, -1, PCOL[1]);
+  // whose turn: small marker over the shooter
+  if(!roundOver && !banana && sh.alive){ ctx.fillStyle=PCOL[turn]; ctx.beginPath(); const mx=sh.x, my=sh.y-84+Math.sin(now/200)*3; ctx.moveTo(mx-8,my-10); ctx.lineTo(mx+8,my-10); ctx.lineTo(mx,my); ctx.fill(); }
 
   // slingshot band + preview
   if(holding && pull.t>0){
-    const hx=monkey.x+HAND.dx, hy=monkey.y+HAND.dy;
+    const hp0=handOf(shooter(),side()), hx=hp0.x, hy=hp0.y;
     const L=20+pull.t*110;
     const px=hx-Math.cos(pull.ang)*L, py=hy+Math.sin(pull.ang)*L;
     const col=`hsl(${50-pull.t*50},100%,60%)`;
@@ -444,6 +468,13 @@ function render(now){
   // flash (drawn glow, no shadowBlur)
   if(flashT>0){ ctx.setTransform(1,0,0,1,0,0); ctx.fillStyle=`rgba(255,240,200,${flashT})`; ctx.fillRect(0,0,cv.width,cv.height); W2S(); }
   if(hitT>0){ ctx.font='bold 90px system-ui'; ctx.textAlign='center'; ctx.fillStyle=`rgba(255,209,102,${Math.min(1,hitT)})`; ctx.fillText(hitText,WW/2,300); }
+  else if(bannerT>0 && !roundOver){ ctx.font='bold 64px system-ui'; ctx.textAlign='center'; ctx.globalAlpha=Math.min(1,bannerT); ctx.fillStyle=PCOL[turn]; ctx.fillText(`PLAYER ${turn+1}`,WW/2,260); ctx.globalAlpha=1; }
+  // score
+  ctx.font='bold 40px system-ui'; ctx.textAlign='center';
+  ctx.fillStyle='rgba(12,14,26,.55)'; ctx.fillRect(WW/2-110,14,220,56);
+  ctx.fillStyle=PCOL[0]; ctx.fillText(`P1 ${score[0]}`,WW/2-50,57);
+  ctx.fillStyle='#fff'; ctx.fillText(':',WW/2,55);
+  ctx.fillStyle=PCOL[1]; ctx.fillText(`${score[1]} P2`,WW/2+50,57);
 
   drawHUD();
 }
@@ -470,7 +501,8 @@ function drawHUD(){
   ctx.fillText(mouseMode?`LOCK ${document.pointerLockElement?'ON':'OFF'}   pull ${mouseCur?Math.round(mouseCur.x)+','+Math.round(mouseCur.y):'-'}`:screenAngle()+'° screen',x+10,y+110);
   // log
   ctx.font='12px monospace'; ctx.fillStyle='rgba(255,255,255,.85)';
-  log.forEach((l,i)=>ctx.fillText(l,x+4,y+140+i*16));
+  ctx.fillStyle='rgba(255,255,255,.75)';
+  log.forEach((l,i)=>ctx.fillText(l,x+4,CH-14-i*16)); // bottom-left, away from the apes
 }
 
 // ---------- loop ----------
@@ -518,8 +550,8 @@ document.addEventListener('mouseup',e=>{
   try{ if(document.pointerLockElement) document.exitPointerLock(); }catch(err){}
 });
 
-document.getElementById('bNew').onclick=()=>{ newTrack(); log=[]; };
-document.getElementById('bCal').onclick=()=>{ target.alive=true; if(hasSensor) ref={x:g.x,y:g.y,z:g.z}; };
+document.getElementById('bNew').onclick=()=>{ newTrack(); log=[]; bannerT=1.2; };
+document.getElementById('bCal').onclick=()=>{ score=[0,0]; turn=0; nextStarter=1; newTrack(); log=[]; bannerT=1.2; };
 document.getElementById('bSet').onclick=()=>document.getElementById('panel').classList.toggle('open');
 
 function bindRange(id,key,fmt){ const el=document.getElementById(id), v=document.getElementById('v'+id.slice(1));
@@ -535,6 +567,7 @@ bindRange('sTurn','turn',v=>v+'°');
 bindRange('sTilt','tilt',v=>Math.round(Math.asin(Math.min(1,v/9.81))*180/Math.PI)+'°');
 bindRange('sSpeed','speed',v=>v);
 bindRange('sTremble','tremble',v=>v.toFixed(1));
+bindRange('sTrMax','trMax',v=>'×'+v);
 bindRange('sGrav','grav',v=>v);
 bindRange('sSmooth','smooth',v=>v.toFixed(2));
 bindChk('cVib','vib'); bindChk('cInvX','invX'); bindChk('cInvY','invY'); bindChk('cPrev','prev');
@@ -556,7 +589,7 @@ document.getElementById('bStart').onclick=async()=>{
 resize(); newTrack(); placeBtn(); requestAnimationFrame(loop);
 if('serviceWorker' in navigator && location.protocol==='https:'){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
 // expose for testing
-window.__amc={S,g,get ref(){return ref},set ref(v){ref=v},startHold,endHold,get banana(){return banana},pull,setSensor(){hasSensor=true}};
+window.__amc={get turn(){return turn}, get score(){return score}, S,g,get ref(){return ref},set ref(v){ref=v},startHold,endHold,get banana(){return banana},pull,setSensor(){hasSensor=true}};
 </script>
 </body>
 </html>
