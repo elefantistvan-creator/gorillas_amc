@@ -82,6 +82,7 @@
 </div>
 <div id="overlay">
   <h1>AMC TEST TRACK</h1>
+  <p style="font-size:12px;opacity:.6">build 11</p>
   <p>Hold the phone in landscape. <b>Press and hold</b> the orange button — that moment is the zero point.
   Turn the phone sideways, away from the target, for power: further = stronger, and it trembles more. Nod it (top toward you / away) to set the shot height.
   <b>Release</b> to throw.</p>
@@ -937,7 +938,8 @@ document.getElementById('bStart').onclick=async()=>{
 };
 
 resize(); newTrack(); placeBtn(); requestAnimationFrame(loop);
-if('serviceWorker' in navigator && location.protocol==='https:'){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
+if('serviceWorker' in navigator && location.protocol==='https:'){ navigator.serviceWorker.register('sw.js').catch(()=>{});
+  let reloaded=false; navigator.serviceWorker.addEventListener('controllerchange',()=>{ if(!reloaded){ reloaded=true; location.reload(); } }); }
 // expose for testing
 window.__amc={dbg:{theme(i){theme=THEMES[i];bgCache=null;drawBuildings();initClouds();},noWind(){wind=0;windNow=0;S.wind=false;},aimAt(){const sh=shooter(),fo=victim();return {sx:sh.x,sy:sh.y,fx:fo.x,fy:fo.y};},fire(vx,vy,type){const hp=handOf(shooter(),side());bananas=[{x:hp.x,y:hp.y,vx,vy,rot:0,t:0,by:turn,type:type||'std',n:0,shot:{t:0,a:0}}];shotActive=true;shooter().throwT=performance.now();}},get turn(){return turn}, get score(){return score}, S,g,get ref(){return ref},set ref(v){ref=v},startHold,endHold,get banana(){return bananas[0]||null}, get hp(){return [monkey.hp,target.hp]}, get ys(){return [monkey.y,target.y,monkey.falling,target.falling]}, get mines(){return mines}, get fires(){return fires}, award(p){awardSpecial(p)}, get ammo(){return ammo},pull,setSensor(){hasSensor=true}};
 </script>
