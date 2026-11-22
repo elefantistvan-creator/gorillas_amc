@@ -92,7 +92,7 @@
 </div>
 <div id="overlay">
   <h1>AMC TEST TRACK</h1>
-  <p style="font-size:12px;opacity:.6">build 16</p>
+  <p style="font-size:12px;opacity:.6">build 17</p>
   <p class="intro">Hold the phone in landscape. <b>Press and hold</b> the orange button — that moment is the zero point.
   Turn the phone sideways, away from the target, for power: further = stronger, and it trembles more. Nod it (top toward you / away) to set the shot height.
   <b>Release</b> to throw.</p>
@@ -1149,16 +1149,19 @@ const SND=(()=>{
 })();
 
 
-// ---------- online play: two phones, peer to peer (PeerJS broker only for the handshake) ----------
+// ---------- online play: two phones talk through public MQTT relays (WebSocket, works on any network) ----------
+// Only moves travel (throws, timeouts, selections); both phones simulate the game themselves.
 const Net=(()=>{
-  let mode='local', me=0, peer=null, conn=null, queue=[], code='', onStatus=()=>{};
-  const PREFIX='gorillas-amc-v1-';
+  let mode='local', me=0, clients=[], queue=[], code='', onStatus=()=>{}, seen=new Set(), started=false, lastHeard=0, hb=null, joinTimer=null;
+  const BROKERS=window.__BROKERS||['wss://broker.emqx.io:8084/mqtt','wss://broker.hivemq.com:8884/mqtt'];
+  const ROOT='gorillas-amc/v2/';
+  const inbox=()=>ROOT+code+(mode==='host'?'/h':'/g'), outbox=()=>ROOT+code+(mode==='host'?'/g':'/h');
   const N={
     get mode(){return mode}, get me(){return me}, get code(){return code},
     myTurn(){ return mode==='local' || turn===me; },
-    send(m){ if(mode!=='local' && conn && conn.open) try{ conn.send(m); }catch(e){} },
+    send(m){ if(mode==='local') return; m.id=m.id||(Date.now().toString(36)+Math.random().toString(36).slice(2,8)); const txt=JSON.stringify(m);
+      for(const c of clients){ try{ if(c.connected) c.publish(outbox(),txt,{qos:1}); }catch(e){} } if(N._fakeSend) N._fakeSend(m); },
     status(fn){ onStatus=fn; },
-    // apply queued moves only when this phone has caught up to the same moment of the game
     pump(){
       while(queue.length){
         const m=queue[0];
@@ -1169,34 +1172,42 @@ const Net=(()=>{
       }
     },
     recv(m){
-      if(m.t==='start'){ startOnline(m); return; }
+      if(m.id){ if(seen.has(m.id)) return; seen.add(m.id); }     // the same message arrives via both relays
+      lastHeard=Date.now();
+      if(m.t==='ping') return;
+      if(m.t==='hello' && mode==='host'){ if(!started){ started=true; const st={t:'start',seed:(Math.random()*1e9)|0,grav:S.grav,wind:S.wind,turnTime:S.turnTime}; N.send(st); onStatus('connected'); startOnline(st); } return; }
+      if(m.t==='start' && mode==='guest'){ if(!started){ started=true; clearTimeout(joinTimer); onStatus('connected'); startOnline(m); } return; }
       queue.push(m);
     },
-    host(cb){ mode='host'; me=0; tryHost(cb,0); },
-    join(c,cb){ mode='guest'; me=1; code=c.toUpperCase();
-      loadPeer(()=>{ peer=new Peer(); peer.on('open',()=>{ conn=peer.connect(PREFIX+code,{reliable:true}); wire(conn,cb); });
-        peer.on('error',e=>onStatus('error',e.type)); }); },
-    // test hook: plug a fake wire between two pages
-    fake(role,sendFn){ mode=role; me=role==='host'?0:1; conn={open:true,send:sendFn}; },
-    leave(){ try{ conn&&conn.close(); peer&&peer.destroy(); }catch(e){} mode='local'; me=0; conn=null; peer=null; queue=[]; }
+    host(){ N.leave(); mode='host'; me=0;
+      code=Array.from({length:4},()=>'ABCDEFGHJKMNPQRSTUVWXYZ'[Math.floor(Math.random()*23)]).join('');
+      connect(()=>onStatus('hosting',code)); },
+    join(c){ N.leave(); mode='guest'; me=1; code=c.toUpperCase();
+      connect(()=>{ const hello=()=>{ if(!started) N.send({t:'hello'}); };
+        hello(); const iv=setInterval(()=>{ if(started) clearInterval(iv); else hello(); },1500);
+        joinTimer=setTimeout(()=>{ if(!started){ clearInterval(iv); onStatus('error','peer-unavailable'); } },12000); }); },
+    fake(role,sendFn){ mode=role; me=role==='host'?0:1; started=true; N._fakeSend=sendFn; },
+    leave(){ for(const c of clients){ try{ c.end(true); }catch(e){} } clients=[]; clearInterval(hb); clearTimeout(joinTimer);
+      mode='local'; me=0; queue=[]; started=false; seen=new Set(); N._fakeSend=null; }
   };
-  function tryHost(cb,attempt){
-    code=Array.from({length:4},()=>'ABCDEFGHJKMNPQRSTUVWXYZ'[Math.floor(Math.random()*23)]).join('');
-    loadPeer(()=>{
-      peer=new Peer(PREFIX+code);
-      peer.on('open',()=>onStatus('hosting',code));
-      peer.on('connection',c=>{ conn=c; wire(c,cb); });
-      peer.on('error',e=>{ if(e.type==='unavailable-id' && attempt<5){ peer.destroy(); tryHost(cb,attempt+1); } else onStatus('error',e.type); });
+  function connect(onReady){
+    loadMqtt(()=>{
+      let ready=false, failed=0;
+      for(const url of BROKERS){
+        let c; try{ c=mqtt.connect(url,{clientId:'gamc_'+Math.random().toString(36).slice(2,10),clean:true,reconnectPeriod:3000,connectTimeout:8000}); }catch(e){ failed++; continue; }
+        clients.push(c);
+        c.on('connect',()=>{ c.subscribe(inbox(),{qos:1}); if(!ready){ ready=true; onReady(); } });
+        c.on('message',(topic,payload)=>{ try{ N.recv(JSON.parse(payload.toString())); }catch(e){} });
+        c.on('error',()=>{ failed++; if(failed>=BROKERS.length && !ready) onStatus('error','no-network'); });
+      }
+      clearInterval(hb);
+      hb=setInterval(()=>{ if(mode==='local') return; N.send({t:'ping'});
+        if(started && lastHeard && Date.now()-lastHeard>15000){ onStatus('lost'); hitText='CONNECTION LOST'; hitT=3; } },4000);
     });
   }
-  function wire(c,cb){
-    c.on('open',()=>{ onStatus('connected'); if(mode==='host'){ const st={t:'start',seed:(Math.random()*1e9)|0,grav:S.grav,wind:S.wind,turnTime:S.turnTime}; c.send(st); startOnline(st); } cb&&cb(); });
-    c.on('data',m=>N.recv(m));
-    c.on('close',()=>{ onStatus('lost'); hitText='DISCONNECTED'; hitT=4; });
-  }
-  function loadPeer(cb){
-    if(window.Peer) return cb();
-    const sc=document.createElement('script'); sc.src='https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';
+  function loadMqtt(cb){
+    if(window.mqtt) return cb();
+    const sc=document.createElement('script'); sc.src='https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js';
     sc.onload=cb; sc.onerror=()=>onStatus('error','no-network'); document.head.appendChild(sc);
   }
   return N;
