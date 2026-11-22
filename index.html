@@ -84,6 +84,8 @@
 </div>
 <div id="panel">
   <h3>Settings <button class="btn ghost" id="bPanelClose" style="float:right;padding:2px 10px;font-size:12px;position:static">CLOSE</button></h3>
+  <label>Control <select id="selCtrl"><option value="motion">Motion (turn + nod)</option><option value="touch">Touch (drag back)</option></select></label>
+  <label>Touch: drag for full power <span><input type="range" id="sTouchF" min="60" max="260" step="10"><b id="vTouchF"></b></span></label>
   <label>Sensor <select id="selSrc"><option value="split">Turn = power, nod = height</option><option value="move">Move (x / y)</option><option value="gyro">Gyro (turn)</option><option value="tilt">Gravity (tilt)</option></select></label>
   <label>Turn for full power <span><input type="range" id="sSpTurn" min="10" max="60" step="1"><b id="vSpTurn"></b></span></label>
   <label>Nod for full height <span><input type="range" id="sSpTilt" min="10" max="60" step="1"><b id="vSpTilt"></b></span></label>
@@ -105,7 +107,6 @@
   <label>Invert Y <input type="checkbox" id="cInvY"></label>
   <label>Aim preview <input type="checkbox" id="cPrev"></label>
   <label>Wind <input type="checkbox" id="cWind"></label>
-  <label>Button on left <input type="checkbox" id="cLeft"></label>
   <h3>Sensor</h3>
   <div id="dbg" style="font-family:monospace;font-size:12px;line-height:1.5"></div>
 </div>
@@ -138,7 +139,8 @@
   <div id="howBox" class="box">
     <div class="how">
       <p><b>Banana war on the rooftops.</b> Take turns and empty the other gorilla's life bar.</p>
-      <p><b>Aim:</b> press and hold <b>HOLD</b> — that moment is zero. <b>Turn</b> the phone sideways, away from the target, for power. <b>Nod</b> it (top toward you / away) for height. <b>Release</b> to throw.</p>
+      <p><b>Aim (Motion):</b> hold your finger anywhere on the screen — that moment is zero. <b>Turn</b> the phone sideways, away from the target, for power. <b>Nod</b> it (top toward you / away) for height. <b>Lift</b> your finger to throw.</p>
+      <p><b>Aim (Touch):</b> put your finger down and drag back like a slingshot; lift to throw. Choose the control in Settings.</p>
       <p>The dotted arc shows the path in <b>calm air</b> — judge the wind yourself: the arrow at the top is <span style="color:#60a5fa">blue</span> when weak, <span style="color:#f87171">red</span> when strong.</p>
       <p>The harder and longer you pull, the more your hand trembles. You have 10 seconds per turn.</p>
       <p><b>Bananas</b> (bottom): <b>Banana</b> plain · <b>Drill</b> bores through buildings · <b>Split</b> splits into three at the top · <b>Bounce</b> bounces three times · <b>Fire</b> leaves flames that burn for 2 turns · <b>Atom</b> huge blast. Special bananas are earned by landing close to the opponent.</p>
@@ -163,14 +165,14 @@
     <p id="joinStatus"></p>
     <button class="btn ghost" id="bBack2">BACK</button>
   </div>
-  <p style="font-size:11px;opacity:.45;margin-top:10px">build 18</p>
+  <p style="font-size:11px;opacity:.45;margin-top:10px">build 19</p>
 </div>
 <div id="rotate">↻ Turn the phone to landscape</div>
 
 <script>
 'use strict';
 // ---------- settings ----------
-const DEF={ver:8,snd:true,vol:0.7,turnTime:10,trMax:4,src:'split',spTurn:30,spTilt:30,moveX:20,moveY:15,leak:1.5,turn:25,tilt:5,speed:1150,tremble:1,grav:900,smooth:0.3,vib:true,invX:false,invY:false,prev:true,wind:true,left:false};
+const DEF={ver:9,ctrl:'motion',touchFull:130,snd:true,vol:0.7,turnTime:10,trMax:4,src:'split',spTurn:30,spTilt:30,moveX:20,moveY:15,leak:1.5,turn:25,tilt:5,speed:1150,tremble:1,grav:900,smooth:0.3,vib:true,invX:false,invY:false,prev:true,wind:true,left:false};
 let S=Object.assign({},DEF);
 try{const j=JSON.parse(localStorage.getItem('amc_settings')||'null'); if(j && j.ver===DEF.ver) Object.assign(S,j);}catch(e){}
 function saveS(){try{localStorage.setItem('amc_settings',JSON.stringify(S));}catch(e){}}
@@ -634,7 +636,7 @@ let trail=[], parts=[], flashT=0, hitText='', hitT=0, wind=0, windNow=0, gustT=0
 const nPh=[Math.random()*6,Math.random()*6,Math.random()*6,Math.random()*6];
 function noise(t,o){ return Math.sin(t*13.1+nPh[o])*.5+Math.sin(t*21.7+nPh[o+1])*.3+Math.sin(t*34.3+nPh[o]*2)*.2; }
 
-function startHold(){
+function startHold(){ hintT=0;
   if(bananas.length||shotActive||roundOver||turnWait>0||!Net.myTurn()||paused||(GM==='cpu'&&turn===1)) return;
   holding=true; holdT0=performance.now();
   if(hasSensor && !mouseMode){ ref={x:g.x,y:g.y,z:g.z}; rot.x=0; rot.y=0; gsm.x=0; gsm.y=0; mv.vx=mv.vy=mv.px=mv.py=0; R0=(hasOri&&ori)?rotMat(ori.a,ori.b,ori.g):null; }
@@ -664,7 +666,13 @@ function applyThrow(m){
 }
 function computePull(now){
   let dx=0,dy=0,tension=0,dirx=1,diry=0;
-  if(mouseMode){
+  if(touchAim){
+    // touch: drag back like a slingshot (screen pixels), direction opposite to the drag
+    if(!touchRef||!touchCur){ pull.t=0; return; }
+    dx=(touchCur.x-touchRef.x); dy=-(touchCur.y-touchRef.y);
+    const m=Math.hypot(dx,dy); tension=Math.min(1,m/S.touchFull);
+    if(m>0.001){ dirx=-dx/m; diry=-dy/m; }
+  } else if(mouseMode){
     if(!mouseRef||!mouseCur){ pull.t=0; return; }
     dx=(mouseCur.x-mouseRef.x)/scale; dy=-(mouseCur.y-mouseRef.y)/scale; // pull vector, y up
     const m=Math.hypot(dx,dy); tension=Math.min(1,m/mouseFull());
@@ -829,11 +837,12 @@ function step(dt){
   if(flashT>0) flashT-=dt; if(hitT>0) hitT-=dt;
   if(turnWait>0){ turnWait-=dt; if(turnWait<=0){ turnWait=0; if(roundOver){ roundNo++; newTrack(baseSeed+roundNo); turn=nextStarter; nextStarter=1-nextStarter; bannerT=1.2; turnClock=S.turnTime; buildAmmoUI(); } } }
   if(bannerT>0) bannerT-=dt;
+  if(hintT>0 && !holding && !shotActive) hintT-=dt*0.35;
 }
-let bannerT=1.2;
+let bannerT=1.2, hintT=6;
 function applyTimeout(){ hitText='TIME!'; hitT=1; pushLog(`P${turn+1} time up`); nextTurn(); }
 function sensorsReady(){ return document.getElementById('overlay').style.display==='none' && !paused; }
-function nextTurn(){ SND.chime(); turn=1-turn; turnWait=0.7; bannerT=1.4; turnClock=S.turnTime; buildAmmoUI(); burnTick(); }
+function nextTurn(){ hintT=Math.max(hintT,0); SND.chime(); turn=1-turn; turnWait=0.7; bannerT=1.4; turnClock=S.turnTime; buildAmmoUI(); burnTick(); }
 // each burning patch hurts an ape standing close by 5%, for 2 turns
 function burnTick(){
   for(const f of fires){
@@ -978,6 +987,9 @@ function render(now){
   if(S.turnTime>0 && !roundOver && !bananas.length && !shotActive && sh.alive && turnWait<=0){
     const tc=Math.ceil(turnClock); ctx.font='bold 30px system-ui'; ctx.textAlign='center';
     ctx.fillStyle=tc<=3?'#ff5a4e':'#ffffff'; ctx.fillText(tc,sh.x,sh.y-128); }
+  if(!roundOver && !bananas.length && !shotActive && !holding && sh.alive && Net.myTurn() && !(GM==='cpu'&&turn===1) && turnWait<=0 && hintT>0){
+    ctx.font='bold 26px system-ui'; ctx.textAlign='center'; ctx.globalAlpha=Math.min(1,hintT)*.85; ctx.fillStyle='#fff';
+    ctx.fillText(mouseMode?'PRESS AND DRAG TO AIM':S.ctrl==='touch'?'HOLD AND DRAG BACK TO AIM':'HOLD THE SCREEN AND TURN THE PHONE',WW/2,WH-150); ctx.globalAlpha=1; }
   if(!roundOver && !bananas.length && !shotActive && sh.alive){ ctx.fillStyle=PCOL[turn]; ctx.beginPath(); const mx=sh.x, my=sh.y-106+Math.sin(now/200)*3; ctx.moveTo(mx-8,my-10); ctx.lineTo(mx+8,my-10); ctx.lineTo(mx,my); ctx.fill(); }
 
   // slingshot band + preview
@@ -1366,6 +1378,20 @@ shootBtn.addEventListener('contextmenu',e=>e.preventDefault());
 // full tension distance: long pull when the mouse is captured, short when it is not (screen edge)
 function mouseFull(){ return document.pointerLockElement ? 260 : 110; }
 // mouse mode: pointer lock -> relative movement, not limited by the screen edge
+// phones: hold anywhere on the screen. Motion = the phone's turn/nod aims; Touch = drag back with the finger
+let touchAim=false, touchRef=null, touchCur=null, aimPointer=null;
+cv.addEventListener('pointerdown',e=>{
+  if(e.pointerType==='mouse' || mouseMode) return;
+  if(aimPointer!==null || bananas.length || holding) return;
+  e.preventDefault();
+  touchAim=S.ctrl==='touch'; touchRef={x:e.clientX,y:e.clientY}; touchCur={...touchRef};
+  startHold();
+  if(holding){ aimPointer=e.pointerId; try{ cv.setPointerCapture(e.pointerId); }catch(err){} } else touchAim=false;
+},{passive:false});
+cv.addEventListener('pointermove',e=>{ if(e.pointerId===aimPointer) touchCur={x:e.clientX,y:e.clientY}; });
+const endTouch=e=>{ if(e.pointerId!==aimPointer) return; aimPointer=null; endHold(); touchAim=false; touchRef=touchCur=null; };
+cv.addEventListener('pointerup',endTouch); cv.addEventListener('pointercancel',endTouch);
+cv.addEventListener('contextmenu',e=>e.preventDefault());
 cv.addEventListener('mousedown',e=>{
   if(!mouseMode||bananas.length||holding) return;
   mouseRef={x:0,y:0}; mouseCur={x:0,y:0}; startHold();
@@ -1409,8 +1435,9 @@ bindRange('sSmooth','smooth',v=>v.toFixed(2));
 bindChk('cSnd','snd'); bindRange('sVol','vol',v=>Math.round(v*100)+'%'); document.getElementById('sVol').addEventListener('input',()=>SND.setVol(S.vol));
 bindChk('cVib','vib'); bindChk('cInvX','invX'); bindChk('cInvY','invY'); bindChk('cPrev','prev');
 bindChk('cWind','wind',()=>{ wind=S.wind?Math.round((Math.random()*2-1)*120):0; streaks=[]; });
-function placeBtn(){ shootBtn.className='btn '+(S.left?'left':'right'); shootBtn.style.display=mouseMode?'none':''; }
-bindChk('cLeft','left',placeBtn);
+function placeBtn(){ shootBtn.style.display='none'; }
+{ const el=document.getElementById('selCtrl'); el.value=S.ctrl; el.onchange=()=>{ S.ctrl=el.value; saveS(); placeBtn(); }; }
+bindRange('sTouchF','touchFull',v=>v+' px');
 
 // sensors, sound, fullscreen: must start from a tap
 let sensorsOn=false;
@@ -1420,8 +1447,11 @@ async function startSensors(){
   SND.init();
   window.addEventListener('devicemotion',onMotion);
   window.addEventListener('deviceorientation',onOrient);
-  try{ if(document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen(); }catch(e){}
-  try{ if(screen.orientation&&screen.orientation.lock) await screen.orientation.lock('landscape'); }catch(e){}
+  const installed=matchMedia('(display-mode: fullscreen)').matches||matchMedia('(display-mode: standalone)').matches;
+  if(!installed){
+    try{ if(document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen({navigationUI:'hide'}); }catch(e){}
+    try{ if(screen.orientation&&screen.orientation.lock) await screen.orientation.lock('landscape'); }catch(e){}
+  }
   setTimeout(()=>{ if(!hasSensor){ mouseMode=true; placeBtn(); pushLog('no motion sensor → mouse mode'); } },1200);
 }
 function hideOverlay(){ document.getElementById('overlay').style.display='none'; document.getElementById('rotate').classList.add('need'); }
