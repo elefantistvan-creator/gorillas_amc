@@ -34,19 +34,22 @@
   .how{max-width:620px;text-align:left;font-size:14px;line-height:1.4;max-height:58vh;overflow:auto;padding:0 6px}
   .how p{margin:6px 0}
   #overlay small{font-size:12px;opacity:.85;margin-left:6px}
-  #ammo{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);display:flex;gap:6px}
-  #builds{position:fixed;bottom:62px;left:50%;transform:translateX(-50%);display:flex;gap:5px}
-  #builds button{position:relative;width:46px;height:30px;border-radius:8px;border:1.5px solid rgba(255,255,255,.15);background:rgba(20,30,48,.8);color:#cfe3ff;
-    font:700 8px system-ui;padding:0;line-height:1;-webkit-tap-highlight-color:transparent}
-  #builds button span{display:block;font-size:13px;margin-bottom:1px}
+  /* side columns: builds on the left, bananas on the right; all buttons the same size */
+  :root{--bh:min(34px,calc((100vh - 24px)/9 - 4px))}
+  #builds,#ammo{position:fixed;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:4px;z-index:4}
+  #builds{left:6px} #ammo{right:6px}
+  #builds button,#ammo button{position:relative;width:52px;height:var(--bh);border-radius:8px;border:1.5px solid rgba(255,255,255,.15);
+    color:#fff;font:700 8px system-ui;padding:0;line-height:1;overflow:visible;-webkit-tap-highlight-color:transparent;
+    display:flex;flex-direction:column;align-items:center;justify-content:center}
+  #builds button{background:rgba(20,30,48,.82);color:#cfe3ff}
+  #builds button span{display:block;font-size:12px;margin-bottom:1px}
   #builds button.used{opacity:.25} #builds button.done{opacity:.45} #builds button.free{background:rgba(20,60,40,.85);color:#bbf7d0} #builds button.hid{background:rgba(48,24,60,.85);color:#e9d5ff}
-  #ammo button{position:relative;width:46px;height:46px;border-radius:10px;border:2px solid rgba(255,255,255,.15);
-    background:rgba(12,14,26,.82);color:#fff;font:700 9px system-ui;padding:0;overflow:hidden;line-height:1;-webkit-tap-highlight-color:transparent}
-  #ammo button canvas{display:block;margin:3px auto 1px;width:34px;height:22px}
-  #ammo button.sel{border-color:#ffd166;background:rgba(60,44,10,.75)}
-  #ammo button.empty{opacity:.3}
-  #ammo button i{position:absolute;top:1px;right:3px;font-style:normal;font-size:10px;color:#ffd166}
-  #ammo button u{position:absolute;top:-9px;left:50%;transform:translateX(-50%);text-decoration:none;font-size:8px;background:#ffd166;color:#111;padding:1px 4px;border-radius:4px}
+  #ammo button{background:rgba(12,14,26,.82)}
+  #ammo button canvas{display:block;margin:0 auto 1px;width:26px;height:15px}
+  #ammo button.sel{border-color:#ffd166;background:rgba(60,44,10,.8)}
+  #ammo button.empty{color:rgba(255,255,255,.3);border-color:rgba(255,255,255,.07)} #ammo button.empty canvas{opacity:.3}
+  #ammo button i{position:absolute;top:1px;right:3px;font-style:normal;font-size:9px;color:#ffd166}
+  #ammo button u{position:absolute;top:50%;right:56px;transform:translateY(-50%);text-decoration:none;font-size:8px;background:#ffd166;color:#111;padding:2px 4px;border-radius:4px}
   #top .btn{position:static}
   #panel{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9;width:300px;max-height:calc(100vh - 30px);
     overflow:auto;background:rgba(12,14,26,.92);border-radius:12px;padding:12px 14px;
@@ -183,7 +186,7 @@
     <p id="joinStatus"></p>
     <button class="btn ghost" id="bBack2">BACK</button>
   </div>
-  <p style="font-size:11px;opacity:.45;margin-top:10px">build 23</p>
+  <p style="font-size:11px;opacity:.45;margin-top:10px">build 24</p>
 </div>
 <div id="rotate">↻ Turn the phone to landscape</div>
 
@@ -1054,7 +1057,7 @@ function render(now){
     ctx.fillStyle=tc<=3?'#ff5a4e':'#ffffff'; ctx.fillText(tc,sh.x,sh.y-128); }
   if(!roundOver && !bananas.length && !shotActive && !holding && sh.alive && Net.myTurn() && !(GM==='cpu'&&turn===1) && turnWait<=0 && hintT>0){
     ctx.font='bold 26px system-ui'; ctx.textAlign='center'; ctx.globalAlpha=Math.min(1,hintT)*.85; ctx.fillStyle='#fff';
-    ctx.fillText(mouseMode?'PRESS AND DRAG TO AIM':S.ctrl==='touch'?'HOLD AND DRAG BACK TO AIM':'HOLD THE SCREEN AND TURN THE PHONE',WW/2,WH-300); ctx.globalAlpha=1; }
+    ctx.fillText(mouseMode?'PRESS AND DRAG TO AIM':S.ctrl==='touch'?'HOLD AND DRAG BACK TO AIM':'HOLD THE SCREEN AND TURN THE PHONE',WW/2,WH-120); ctx.globalAlpha=1; }
   if(!roundOver && !bananas.length && !shotActive && sh.alive){ ctx.fillStyle=PCOL[turn]; ctx.beginPath(); const mx=sh.x, my=sh.y-106+Math.sin(now/200)*3; ctx.moveTo(mx-8,my-10); ctx.lineTo(mx+8,my-10); ctx.lineTo(mx,my); ctx.fill(); }
 
   // slingshot band + preview
@@ -1549,8 +1552,8 @@ function buildAmmoUI(){
   BTYPES.forEach((t,i)=>{
     const n=ammo[turn][t.id], bt=document.createElement('button');
     bt.className=(selType[turn]===i?'sel ':'')+(n===0?'empty':'');
-    const c=document.createElement('canvas'); c.width=34; c.height=22; const g=c.getContext('2d');
-    g.translate(17,16); g.beginPath(); g.arc(0,-4,9,0.35,Math.PI-0.35,false); g.arc(0,-8,7.5,Math.PI-0.45,0.45,true); g.closePath();
+    const c=document.createElement('canvas'); c.width=34; c.height=20; const g=c.getContext('2d');
+    g.translate(17,15); g.beginPath(); g.arc(0,-4,9,0.35,Math.PI-0.35,false); g.arc(0,-8,7.5,Math.PI-0.45,0.45,true); g.closePath();
     g.fillStyle=t.col; g.fill(); g.strokeStyle='rgba(0,0,0,.5)'; g.stroke();
     bt.appendChild(c); bt.appendChild(document.createTextNode(t.name));
     if(n>=0){ const k=document.createElement('i'); k.textContent=n; bt.appendChild(k); }
