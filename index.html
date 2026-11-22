@@ -41,7 +41,15 @@
     flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:20px}
   #overlay h1{margin:0 0 6px;font-size:28px;color:#ffd166}
   #overlay p{max-width:520px;opacity:.85;line-height:1.45;margin:6px 0}
-  #overlay .btn{position:static;margin-top:16px;font-size:18px;padding:14px 28px;background:#e85d04}
+  #overlay .btn{position:static;margin-top:12px;font-size:17px;padding:12px 26px;background:#e85d04;min-width:260px}
+  #overlay .btn.alt{background:#2563eb} #overlay .btn.ghost{background:transparent;border:1px solid rgba(255,255,255,.3);min-width:0}
+  #menu{display:flex;flex-direction:column;align-items:center}
+  .netbox{display:none;flex-direction:column;align-items:center}
+  #hostBox{flex-direction:row;gap:28px} #hostBox .col{display:flex;flex-direction:column;align-items:center}
+  #overlay.net .intro{display:none} #overlay{overflow:auto}
+  #codeBig{font:800 54px/1 system-ui;letter-spacing:.18em;color:#ffd166;margin:4px 0 10px}
+  #qr{background:#fff;padding:8px;border-radius:8px;margin:6px 0} #qr img,#qr canvas{display:block;width:150px;height:150px}
+  #codeIn{font:800 40px system-ui;letter-spacing:.2em;width:200px;text-align:center;text-transform:uppercase;border-radius:10px;border:0;padding:8px;margin:8px 0}
   #rotate{position:fixed;inset:0;background:#111;display:none;align-items:center;justify-content:center;font-size:20px}
   @media (orientation:portrait){ #rotate.need{display:flex} }
 </style>
@@ -84,12 +92,32 @@
 </div>
 <div id="overlay">
   <h1>AMC TEST TRACK</h1>
-  <p style="font-size:12px;opacity:.6">build 15</p>
-  <p>Hold the phone in landscape. <b>Press and hold</b> the orange button — that moment is the zero point.
+  <p style="font-size:12px;opacity:.6">build 16</p>
+  <p class="intro">Hold the phone in landscape. <b>Press and hold</b> the orange button — that moment is the zero point.
   Turn the phone sideways, away from the target, for power: further = stronger, and it trembles more. Nod it (top toward you / away) to set the shot height.
   <b>Release</b> to throw.</p>
-  <p style="font-size:13px">No motion sensor (PC)? Press anywhere on the track and drag back like a slingshot.</p>
-  <button class="btn" id="bStart">START</button>
+  <p class="intro" style="font-size:13px">No motion sensor (PC)? Press anywhere on the track and drag back like a slingshot.</p>
+  <div id="menu">
+    <button class="btn" id="bStart">PLAY ON 1 PHONE</button>
+    <button class="btn alt" id="bHost">HOST ONLINE GAME</button>
+    <button class="btn alt" id="bJoinOpen">JOIN WITH CODE</button>
+  </div>
+  <div id="hostBox" class="netbox">
+    <div class="col">
+      <p>Your game code</p><div id="codeBig">····</div>
+      <button class="btn alt" id="bShare">SHARE INVITE</button>
+      <p id="hostStatus">Connecting…</p>
+      <button class="btn ghost" id="bBack1">BACK</button>
+    </div>
+    <div class="col"><div id="qr"></div><p style="font-size:12px;opacity:.7">Scan with the other phone's camera</p></div>
+  </div>
+  <div id="joinBox" class="netbox">
+    <p>Enter the code from the other phone</p>
+    <input id="codeIn" maxlength="4" autocomplete="off" autocapitalize="characters" placeholder="ABCD">
+    <button class="btn" id="bJoin">JOIN</button>
+    <p id="joinStatus"></p>
+    <button class="btn ghost" id="bBack2">BACK</button>
+  </div>
 </div>
 <div id="rotate">↻ Turn the phone to landscape</div>
 
@@ -210,15 +238,19 @@ function victim(){ return turn?monkey:target; }
 function side(){ return turn?-1:1; }
 function handOf(ape,sd){ return {x:ape.x+sd*HAND.dx, y:ape.y+HAND.dy}; }
 const PCOL=['#7dd3fc','#fca5a5'];
-function newTrack(){
+// deterministic random: both phones generate the same track, wind and rewards from the same seed
+function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+let grng=Math.random, baseSeed=(Math.random()*1e9)|0, roundNo=0;
+function newTrack(seed){
+  grng=mulberry32(seed==null?((grng()*1e9)|0):seed);
   blds=[]; craters=[];
   let x=0;
   while(x<WW){
-    const w=Math.min(WW-x, 84+Math.floor(Math.random()*64));
-    const h=190+Math.floor(Math.random()*360);
-    const warm=Math.random()<.5, L=30+Math.random()*26;
-    const col=`hsl(${warm?28:212},${3+Math.random()*7}%,${L}%)`;
-    blds.push({x,y:WH-h,w,h,col,L,warm,style:Math.floor(Math.random()*3)}); x+=w+3;
+    const w=Math.min(WW-x, 84+Math.floor(grng()*64));
+    const h=190+Math.floor(grng()*360);
+    const warm=grng()<.5, L=30+grng()*26;
+    const col=`hsl(${warm?28:212},${3+grng()*7}%,${L}%)`;
+    blds.push({x,y:WH-h,w,h,col,L,warm,style:Math.floor(grng()*3)}); x+=w+3;
   }
   const mb=blds[1], tb=blds[blds.length-2];
   monkey={x:mb.x+mb.w/2,y:mb.y,alive:true,hp:100,vy:0};
@@ -226,8 +258,8 @@ function newTrack(){
   apeOnRoofLater=true;
   floaters=[];
   roundOver=false; turnWait=0; monkey.win=target.win=false;
-  wind = S.wind ? Math.round((Math.random()*2-1)*120) : 0;
-  theme=THEMES[Math.floor(Math.random()*THEMES.length)]; bgCache=null;
+  wind = S.wind ? Math.round((grng()*2-1)*120) : 0;
+  theme=THEMES[Math.floor(grng()*THEMES.length)]; bgCache=null;
   drawBuildings(); for(const a of [monkey,target]){ let yy=0; while(yy<WH && !solidAt(a.x,yy+1)) yy++; a.y=yy; }
   initClouds(); bananas=[]; mines=[]; fires=[]; chunks=[]; shotActive=false; turnClock=S.turnTime; gustT=0; parts=[]; trail=[]; debris=[]; dust=[]; corpses=[];
   if(typeof resetAmmo==='function' && BTYPES) resetAmmo();
@@ -242,17 +274,17 @@ function drawBuildings(){
     // ---- shape: main block + optional setback tiers + a roof structure (all solid)
     const tiers=[], top=b.y;
     let ty=top+28, tx=b.x, tw=b.w;                       // leave 28 px on top for roof structures / setbacks
-    const nSet=Math.random()<.45?(Math.random()<.4?2:1):0;
-    const tierH=Math.round((b.h-28)*(0.18+Math.random()*0.14));
+    const nSet=grng()<.45?(grng()<.4?2:1):0;
+    const tierH=Math.round((b.h-28)*(0.18+grng()*0.14));
     const stack=[];
-    for(let k=0;k<nSet;k++){ const ins=8+Math.floor(Math.random()*12); stack.push(ins); }
+    for(let k=0;k<nSet;k++){ const ins=8+Math.floor(grng()*12); stack.push(ins); }
     // build bottom-up: main body, then narrower tiers on top
     let bodyTop=ty+tierH*nSet;
     tiers.push({x:b.x,y:bodyTop,w:b.w,h:WH-bodyTop});
     let cx0=b.x, cw0=b.w;
     for(let k=0;k<nSet;k++){ cx0+=stack[k]; cw0-=2*stack[k]; const yy=bodyTop-tierH*(k+1); tiers.push({x:cx0,y:yy,w:cw0,h:tierH}); }
     const roofTop=tiers[tiers.length-1].y, rx=tiers[tiers.length-1].x, rw=tiers[tiers.length-1].w;
-    const props=[], r=Math.random();
+    const props=[], r=grng();
     if(r<.3) props.push({kind:'tank',x:rx+rw*.55,y:roofTop-24,w:18,h:24});
     else if(r<.6) props.push({kind:'box',x:rx+rw*.2,y:roofTop-12,w:Math.min(30,rw*.4),h:12});
     else if(r<.8) props.push({kind:'stair',x:rx+rw-24,y:roofTop-16,w:18,h:16});
@@ -280,8 +312,8 @@ function drawBuildings(){
       // floor bands / pilasters for structure
       g.fillStyle=C(10,.35); for(let wy=T.y+8; wy<WH; wy+=(b.style===1?22:24)) g.fillRect(T.x,wy,T.w,1.5);
       // grime streaks
-      for(let k=0;k<5;k++){ const sx=T.x+Math.random()*T.w, sl=40+Math.random()*120, sy=T.y+Math.random()*T.h*.6;
-        const sg=g.createLinearGradient(0,sy,0,sy+sl); sg.addColorStop(0,'rgba(0,0,0,.14)'); sg.addColorStop(1,'rgba(0,0,0,0)'); g.fillStyle=sg; g.fillRect(sx,sy,2+Math.random()*3,sl); }
+      for(let k=0;k<5;k++){ const sx=T.x+grng()*T.w, sl=40+grng()*120, sy=T.y+grng()*T.h*.6;
+        const sg=g.createLinearGradient(0,sy,0,sy+sl); sg.addColorStop(0,'rgba(0,0,0,.14)'); sg.addColorStop(1,'rgba(0,0,0,0)'); g.fillStyle=sg; g.fillRect(sx,sy,2+grng()*3,sl); }
       // 3D: shaded side face on the side away from the light, lit roof lip and parapet
       const sx2=lightLeft?T.x+T.w-side:T.x;
       let sg=g.createLinearGradient(sx2,0,sx2+side,0);
@@ -306,12 +338,12 @@ function drawBuildings(){
   }
   // a window: lit warm glass, or dark glass reflecting the sky; frame and sill
   function win(x,y,w,h,flush){
-    const lit=Math.random()<(.12+theme.winP*.55);
+    const lit=grng()<(.12+theme.winP*.55);
     if(lit){ const lg=g.createLinearGradient(0,y,0,y+h); lg.addColorStop(0,`rgba(${theme.win},1)`); lg.addColorStop(1,`rgba(${theme.win},.75)`); g.fillStyle=lg; }
     else { const rg=g.createLinearGradient(x,y,x+w,y+h); rg.addColorStop(0,skyLow); rg.addColorStop(.45,skyMid); rg.addColorStop(1,'#141822'); g.fillStyle=rg; g.globalAlpha=.85; }
     g.fillRect(x,y,w,h); g.globalAlpha=1;
-    if(!lit && Math.random()<.3){ g.fillStyle='rgba(255,255,255,.18)'; g.fillRect(x+1,y+1,2,h-2); }    // glint
-    if(Math.random()<.2){ g.fillStyle='rgba(0,0,0,.35)'; g.fillRect(x,y,w,h*(.3+Math.random()*.4)); } // blinds
+    if(!lit && grng()<.3){ g.fillStyle='rgba(255,255,255,.18)'; g.fillRect(x+1,y+1,2,h-2); }    // glint
+    if(grng()<.2){ g.fillStyle='rgba(0,0,0,.35)'; g.fillRect(x,y,w,h*(.3+grng()*.4)); } // blinds
     if(!flush){ g.fillStyle='rgba(0,0,0,.35)'; g.fillRect(x,y+h,w,1.5); g.fillStyle='rgba(255,255,255,.12)'; g.fillRect(x,y+h+1.5,w,1); }
   }
 }
@@ -533,11 +565,12 @@ const BTYPES=[
   {id:'bounce',name:'BOUNCE', col:'#ff8fc7', ammo:0},
   {id:'fire',  name:'FIRE',   col:'#ff6a2b', ammo:0},
   {id:'atom',  name:'ATOM',   col:'#9dff5c', ammo:0}];
+let shotT=0, shotPh=0;
 let ammo=[{},{}], selType=[0,0], bananas=[], mines=[], fires=[], shotActive=false;
 // earn a random special banana for landing close to the foe (atom is rare); max 3 of each
 function awardSpecial(p){
   const pool=['drill','drill','drill','split','split','split','bounce','bounce','bounce','fire','fire','fire','atom'];
-  const id=pool[Math.floor(Math.random()*pool.length)];
+  const id=pool[Math.floor(grng()*pool.length)];
   if(ammo[p][id]>=3) return;
   ammo[p][id]++; SND.pickup();
   const ape=p?target:monkey, t=BTYPES.find(b=>b.id===id);
@@ -550,7 +583,7 @@ const nPh=[Math.random()*6,Math.random()*6,Math.random()*6,Math.random()*6];
 function noise(t,o){ return Math.sin(t*13.1+nPh[o])*.5+Math.sin(t*21.7+nPh[o+1])*.3+Math.sin(t*34.3+nPh[o]*2)*.2; }
 
 function startHold(){
-  if(bananas.length||shotActive||roundOver||turnWait>0) return;
+  if(bananas.length||shotActive||roundOver||turnWait>0||!Net.myTurn()) return;
   holding=true; holdT0=performance.now();
   if(hasSensor && !mouseMode){ ref={x:g.x,y:g.y,z:g.z}; rot.x=0; rot.y=0; gsm.x=0; gsm.y=0; mv.vx=mv.vy=mv.px=mv.py=0; R0=(hasOri&&ori)?rotMat(ori.a,ori.b,ori.g):null; }
   vib(15); SND.stretchStart();
@@ -560,17 +593,22 @@ function endHold(){
   if(!holding) return; holding=false; shootBtn.classList.remove('held');
   if(pull.t<0.05){ pushLog('cancel (no tension)'); return; }
   const v=pull.t*S.speed, a=pull.ang;
+  let tp=BTYPES[selType[turn]]; if(ammo[turn][tp.id]===0) tp=BTYPES[0];
+  const msg={t:'throw',by:turn,vx:Math.cos(a)*v,vy:-Math.sin(a)*v,type:tp.id,ph:Math.random()*20,pt:Math.round(pull.t*100),pa:Math.round(a*180/Math.PI)};
+  Net.send(msg); applyThrow(msg);
+}
+// a throw, from this phone or the other one: identical on both
+function applyThrow(m){
+  if(m.by!==turn || shotActive || bananas.length) return false;
   const hp=handOf(shooter(),side());
-  const bt=BTYPES[selType[turn]];
-  if(ammo[turn][bt.id]===0){ selType[turn]=0; }
-  const tp=BTYPES[selType[turn]];
-  if(ammo[turn][tp.id]>0) ammo[turn][tp.id]--;
-  bananas=[{x:hp.x,y:hp.y,vx:Math.cos(a)*v,vy:-Math.sin(a)*v,rot:0,t:0,by:turn,type:tp.id,n:0,shot:{t:Math.round(pull.t*100),a:Math.round(a*180/Math.PI)}}];
-  shotActive=true;
-  if(ammo[turn][tp.id]===0) selType[turn]=0;
+  if(ammo[turn][m.type]>0) ammo[turn][m.type]--;
+  bananas=[{x:hp.x,y:hp.y,vx:m.vx,vy:m.vy,rot:0,t:0,by:turn,type:m.type,n:0,shot:{t:m.pt,a:m.pa}}];
+  shotActive=true; shotT=0; shotPh=m.ph;
+  if(ammo[turn][m.type]===0) selType[turn]=0;
   buildAmmoUI();
   shooter().throwT=performance.now();
-  trail=[]; vib(30); SND.throw(pull.t);
+  trail=[]; vib(30); SND.throw(m.pt/100);
+  return true;
 }
 function computePull(now){
   let dx=0,dy=0,tension=0,dirx=1,diry=0;
@@ -644,7 +682,10 @@ function step(dt){
   // wind gusts: slow drift around the base wind, it can change during a flight
   gustT+=dt;
   const gA=S.wind?(18+Math.abs(wind)*0.35):0;
-  windNow=wind+gA*(Math.sin(gustT*0.55+1.3)*0.6+Math.sin(gustT*1.37)*0.4);
+  // during a shot the gust is a function of the shot's own clock (same on both phones); otherwise local time (display only)
+  const gt=shotActive?(shotT+shotPh):gustT;
+  if(shotActive) shotT+=dt;
+  windNow=wind+gA*(Math.sin(gt*0.55+1.3)*0.6+Math.sin(gt*1.37)*0.4);
   if(Math.abs(windNow-lastWindNow)>12){ windShow=1.5; lastWindNow=windNow; }  // a noticeable change: show a gust
   if(windShow>0) windShow-=dt;
   // wind streaks: faint lines whose speed and number follow the wind
@@ -693,7 +734,7 @@ function step(dt){
       if(b.x<-300||b.x>WW+300||b.y>WH+100){ b.dead=true; pushLog(`P${b.by+1} T ${b.shot.t}% A ${b.shot.a}° → out`); break; }
     }
   }
-  if(bananas.length){ const lead=bananas.find(b=>!b.dead); if(lead){ trail.push({x:lead.x,y:lead.y}); if(trail.length>28) trail.shift(); } }
+  if(bananas.length){ const lead=bananas.find(b=>!b.dead); if(lead){ trail.push({x:lead.x,y:lead.y}); if(trail.length>56) trail.shift(); } }
   bananas=bananas.filter(b=>!b.dead);
   // mines: fall if the floor is gone, arm after a moment, fuse if an ape stands close
   for(const m of mines){ if(m.dead) continue; m.t+=dt;
@@ -705,6 +746,7 @@ function step(dt){
   mines=mines.filter(m=>!m.dead);
   stepChunks(dt);
   apeSupport(dt);
+  Net.pump();
   for(const f of fires){ if(!solidAt(f.x,f.y+2)){ f.vy+=S.grav*dt; f.y+=f.vy*dt; } else f.vy=0; }
   fires=fires.filter(f=>f.y<WH+40);
   // turn timer: running out while aiming throws the banana as it is; otherwise the turn is lost
@@ -712,8 +754,10 @@ function step(dt){
     turnClock-=dt;
     if(turnClock<=3.0 && turnClock>0) SND.tick(Math.ceil(turnClock));
     if(turnClock<=0){ turnClock=0;
-      if(holding){ endHold(); if(!shotActive){ hitText='TIME!'; hitT=1; pushLog(`P${turn+1} time up`); nextTurn(); } }
-      else { hitText='TIME!'; hitT=1; pushLog(`P${turn+1} time up`); nextTurn(); } }
+      if(Net.myTurn()){
+        if(holding) endHold();
+        if(!shotActive){ Net.send({t:'timeout',by:turn}); applyTimeout(); }
+      } }
   }
   for(const f of floaters){ f.t+=dt; f.y-=40*dt; }
   floaters=floaters.filter(f=>f.t<1.4);
@@ -730,10 +774,11 @@ function step(dt){
   if(shakeT>0) shakeT-=dt;
   parts=parts.filter(p=>p.l>0);
   if(flashT>0) flashT-=dt; if(hitT>0) hitT-=dt;
-  if(turnWait>0){ turnWait-=dt; if(turnWait<=0){ turnWait=0; if(roundOver){ newTrack(); turn=nextStarter; nextStarter=1-nextStarter; bannerT=1.2; turnClock=S.turnTime; buildAmmoUI(); } } }
+  if(turnWait>0){ turnWait-=dt; if(turnWait<=0){ turnWait=0; if(roundOver){ roundNo++; newTrack(baseSeed+roundNo); turn=nextStarter; nextStarter=1-nextStarter; bannerT=1.2; turnClock=S.turnTime; buildAmmoUI(); } } }
   if(bannerT>0) bannerT-=dt;
 }
 let bannerT=1.2;
+function applyTimeout(){ hitText='TIME!'; hitT=1; pushLog(`P${turn+1} time up`); nextTurn(); }
 function sensorsReady(){ return document.getElementById('overlay').style.display==='none'; }
 function nextTurn(){ SND.chime(); turn=1-turn; turnWait=0.7; bannerT=1.4; turnClock=S.turnTime; buildAmmoUI(); burnTick(); }
 // each burning patch hurts an ape standing close by 5%, for 2 turns
@@ -992,6 +1037,7 @@ function drawHUD(){
   ctx.fillText(`WIND  ${windNow>0.5?'→':windNow<-0.5?'←':'·'} ${Math.abs(Math.round(windNow))}`,x+10,y+68);
   ctx.fillText(mouseMode?'MODE  mouse':(hasSensor?`MODE  ${S.src==='split'&&(hasOri||hasGyro)?'turn+nod':S.src==='move'?'move':S.src==='gyro'&&hasOri?'pose':(S.src==='gyro'&&hasGyro?'gyro':'gravity')} (${sensorRate} Hz)`:'MODE  waiting for sensor'),x+10,y+90);
   ctx.font='12px system-ui'; ctx.fillStyle='rgba(255,255,255,.7)';
+  if(Net.mode!=='local'){ ctx.fillStyle=PCOL[Net.me]; ctx.font='bold 13px system-ui'; ctx.fillText(`ONLINE · YOU ARE P${Net.me+1} · ${Net.myTurn()?'YOUR TURN':'WAIT'}`,x+130,y+90); ctx.font='12px system-ui'; ctx.fillStyle='rgba(255,255,255,.7)'; }
   ctx.fillText(mouseMode?`LOCK ${document.pointerLockElement?'ON':'OFF'}   pull ${mouseCur?Math.round(mouseCur.x)+','+Math.round(mouseCur.y):'-'}`:screenAngle()+'° screen',x+10,y+110);
   // log
   ctx.font='12px monospace'; ctx.fillStyle='rgba(255,255,255,.85)';
@@ -1001,6 +1047,7 @@ function drawHUD(){
 
 // ---------- loop ----------
 let last=performance.now();
+const FIX=1/120; let simAcc=0;   // fixed physics step: identical results on every device
 function loop(now){
   const dt=Math.min(0.033,(now-last)/1000); last=now;
   if(now-lastRateT>1000){ sensorRate=sensorEvents; sensorEvents=0; lastRateT=now; updDbg(); }
@@ -1008,7 +1055,9 @@ function loop(now){
     computePull(now);
     if(now-lastVib>110 && pull.t>0.08){ vib(Math.round(4+40*pull.t*pull.t)); lastVib=now; }
   } else if(!bananas.length){ pull.t=0; }
-  step(dt); SND.frame(dt); render(now);
+  simAcc=Math.min(0.25,simAcc+dt);
+  while(simAcc>=FIX){ step(FIX); simAcc-=FIX; }
+  SND.frame(dt); render(now);
   requestAnimationFrame(loop);
 }
 function updDbg(){
@@ -1099,6 +1148,68 @@ const SND=(()=>{
   };
 })();
 
+
+// ---------- online play: two phones, peer to peer (PeerJS broker only for the handshake) ----------
+const Net=(()=>{
+  let mode='local', me=0, peer=null, conn=null, queue=[], code='', onStatus=()=>{};
+  const PREFIX='gorillas-amc-v1-';
+  const N={
+    get mode(){return mode}, get me(){return me}, get code(){return code},
+    myTurn(){ return mode==='local' || turn===me; },
+    send(m){ if(mode!=='local' && conn && conn.open) try{ conn.send(m); }catch(e){} },
+    status(fn){ onStatus=fn; },
+    // apply queued moves only when this phone has caught up to the same moment of the game
+    pump(){
+      while(queue.length){
+        const m=queue[0];
+        if(m.t==='sel'){ if(m.by===turn){ selType[turn]=m.i; buildAmmoUI(); } queue.shift(); continue; }
+        if(m.t==='throw'){ if(m.by===turn && !shotActive && !bananas.length && !roundOver && turnWait<=0){ applyThrow(m); queue.shift(); continue; } break; }
+        if(m.t==='timeout'){ if(m.by===turn && !shotActive && !bananas.length && !roundOver && turnWait<=0){ applyTimeout(); queue.shift(); continue; } break; }
+        queue.shift();
+      }
+    },
+    recv(m){
+      if(m.t==='start'){ startOnline(m); return; }
+      queue.push(m);
+    },
+    host(cb){ mode='host'; me=0; tryHost(cb,0); },
+    join(c,cb){ mode='guest'; me=1; code=c.toUpperCase();
+      loadPeer(()=>{ peer=new Peer(); peer.on('open',()=>{ conn=peer.connect(PREFIX+code,{reliable:true}); wire(conn,cb); });
+        peer.on('error',e=>onStatus('error',e.type)); }); },
+    // test hook: plug a fake wire between two pages
+    fake(role,sendFn){ mode=role; me=role==='host'?0:1; conn={open:true,send:sendFn}; },
+    leave(){ try{ conn&&conn.close(); peer&&peer.destroy(); }catch(e){} mode='local'; me=0; conn=null; peer=null; queue=[]; }
+  };
+  function tryHost(cb,attempt){
+    code=Array.from({length:4},()=>'ABCDEFGHJKMNPQRSTUVWXYZ'[Math.floor(Math.random()*23)]).join('');
+    loadPeer(()=>{
+      peer=new Peer(PREFIX+code);
+      peer.on('open',()=>onStatus('hosting',code));
+      peer.on('connection',c=>{ conn=c; wire(c,cb); });
+      peer.on('error',e=>{ if(e.type==='unavailable-id' && attempt<5){ peer.destroy(); tryHost(cb,attempt+1); } else onStatus('error',e.type); });
+    });
+  }
+  function wire(c,cb){
+    c.on('open',()=>{ onStatus('connected'); if(mode==='host'){ const st={t:'start',seed:(Math.random()*1e9)|0,grav:S.grav,wind:S.wind,turnTime:S.turnTime}; c.send(st); startOnline(st); } cb&&cb(); });
+    c.on('data',m=>N.recv(m));
+    c.on('close',()=>{ onStatus('lost'); hitText='DISCONNECTED'; hitT=4; });
+  }
+  function loadPeer(cb){
+    if(window.Peer) return cb();
+    const sc=document.createElement('script'); sc.src='https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';
+    sc.onload=cb; sc.onerror=()=>onStatus('error','no-network'); document.head.appendChild(sc);
+  }
+  return N;
+})();
+// both phones start the same match from the host's seed and rules
+function startOnline(m){
+  S.grav=m.grav; S.wind=m.wind; S.turnTime=m.turnTime;      // shared rules for this session (not saved)
+  baseSeed=m.seed; roundNo=0; score=[0,0]; turn=0; nextStarter=1; log=[];
+  newTrack(baseSeed); bannerT=1.5; turnClock=S.turnTime; buildAmmoUI();
+  document.getElementById('top').style.display='none';
+  hideOverlay();
+}
+
 // ---------- banana selector ----------
 const ammoEl=document.getElementById('ammo');
 function buildAmmoUI(){
@@ -1111,7 +1222,7 @@ function buildAmmoUI(){
     g.fillStyle=t.col; g.fill(); g.strokeStyle='rgba(0,0,0,.5)'; g.stroke();
     bt.appendChild(c); bt.appendChild(document.createTextNode(t.name));
     if(n>=0){ const k=document.createElement('i'); k.textContent=n; bt.appendChild(k); }
-    bt.addEventListener('pointerdown',e=>{ e.preventDefault(); e.stopPropagation(); if(n!==0 && !holding){ selType[turn]=i; buildAmmoUI(); } });
+    bt.addEventListener('pointerdown',e=>{ e.preventDefault(); e.stopPropagation(); if(n!==0 && !holding && Net.myTurn()){ selType[turn]=i; Net.send({t:'sel',by:turn,i}); buildAmmoUI(); } });
     ammoEl.appendChild(bt);
   });
 }
@@ -1169,23 +1280,54 @@ bindChk('cWind','wind',()=>{ wind=S.wind?Math.round((Math.random()*2-1)*120):0; 
 function placeBtn(){ shootBtn.className='btn '+(S.left?'left':'right'); shootBtn.style.display=mouseMode?'none':''; }
 bindChk('cLeft','left',placeBtn);
 
-document.getElementById('bStart').onclick=async()=>{
+// sensors, sound, fullscreen: must start from a tap
+let sensorsOn=false;
+async function startSensors(){
+  if(sensorsOn) return; sensorsOn=true;
   try{ if(typeof DeviceMotionEvent!=='undefined' && DeviceMotionEvent.requestPermission){ await DeviceMotionEvent.requestPermission(); } }catch(e){}
   SND.init();
   window.addEventListener('devicemotion',onMotion);
   window.addEventListener('deviceorientation',onOrient);
   try{ if(document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen(); }catch(e){}
   try{ if(screen.orientation&&screen.orientation.lock) await screen.orientation.lock('landscape'); }catch(e){}
-  document.getElementById('overlay').style.display='none';
-  document.getElementById('rotate').classList.add('need');
   setTimeout(()=>{ if(!hasSensor){ mouseMode=true; placeBtn(); pushLog('no motion sensor → mouse mode'); } },1200);
-};
+}
+function hideOverlay(){ document.getElementById('overlay').style.display='none'; document.getElementById('rotate').classList.add('need'); }
+const $=id=>document.getElementById(id);
+function showBox(id){ ['menu','hostBox','joinBox'].forEach(b=>$(b).style.display=(b===id?'flex':'none')); $('overlay').classList.toggle('net',id!=='menu'); }
+$('bStart').onclick=async()=>{ await startSensors(); Net.leave(); document.getElementById('top').style.display='flex'; hideOverlay(); };
+$('bHost').onclick=()=>{ startSensors(); showBox('hostBox'); $('hostStatus').textContent='Connecting…';
+  Net.status((st,info)=>{
+    if(st==='hosting'){ $('codeBig').textContent=info; const url=inviteUrl(info); makeQR(url); $('hostStatus').textContent='Waiting for the other player…'; }
+    if(st==='connected') $('hostStatus').textContent='Connected!';
+    if(st==='error') $('hostStatus').textContent=info==='no-network'?'No internet connection.':'Connection error ('+info+')';
+  });
+  Net.host(); };
+$('bJoinOpen').onclick=()=>{ startSensors(); showBox('joinBox'); $('codeIn').focus(); };
+$('bJoin').onclick=()=>{ const c=$('codeIn').value.trim().toUpperCase(); if(c.length!==4){ $('joinStatus').textContent='The code has 4 letters.'; return; }
+  startSensors(); $('joinStatus').textContent='Connecting…';
+  Net.status((st,info)=>{ if(st==='connected') $('joinStatus').textContent='Connected!';
+    if(st==='error') $('joinStatus').textContent=info==='peer-unavailable'?'No game with this code.':info==='no-network'?'No internet connection.':'Connection error ('+info+')'; });
+  Net.join(c); };
+$('bBack1').onclick=$('bBack2').onclick=()=>{ Net.leave(); showBox('menu'); };
+$('bShare').onclick=async()=>{ const url=inviteUrl(Net.code), text=`Gorillas AMC: join my game, code ${Net.code}`;
+  try{ if(navigator.share){ await navigator.share({title:'Gorillas AMC',text,url}); return; } }catch(e){ return; }
+  try{ await navigator.clipboard.writeText(url); $('hostStatus').textContent='Invite link copied.'; }catch(e){ $('hostStatus').textContent=url; } };
+function inviteUrl(c){ return location.origin+location.pathname+'?join='+c; }
+function makeQR(url){
+  const box=$('qr'); box.innerHTML='';
+  const go=()=>{ try{ new QRCode(box,{text:url,width:150,height:150,correctLevel:QRCode.CorrectLevel.M}); }catch(e){} };
+  if(window.QRCode) return go();
+  const sc=document.createElement('script'); sc.src='https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js'; sc.onload=go; document.head.appendChild(sc);
+}
+// opened from an invite link or QR: go straight to the join box with the code filled in
+{ const j=new URLSearchParams(location.search).get('join'); if(j){ showBox('joinBox'); $('codeIn').value=j.toUpperCase().slice(0,4); $('bJoin').textContent='JOIN GAME '+j.toUpperCase().slice(0,4); } }
 
-resize(); newTrack(); placeBtn(); requestAnimationFrame(loop);
+resize(); newTrack(baseSeed); placeBtn(); requestAnimationFrame(loop);
 if('serviceWorker' in navigator && location.protocol==='https:'){ navigator.serviceWorker.register('sw.js').catch(()=>{});
   let reloaded=false; navigator.serviceWorker.addEventListener('controllerchange',()=>{ if(!reloaded){ reloaded=true; location.reload(); } }); }
 // expose for testing
-window.__amc={dbg:{theme(i){theme=THEMES[i];bgCache=null;drawBuildings();initClouds();},noWind(){wind=0;windNow=0;S.wind=false;},crater(x,y,r){addCrater(x,y,r);},aimAt(){const sh=shooter(),fo=victim();return {sx:sh.x,sy:sh.y,fx:fo.x,fy:fo.y};},fire(vx,vy,type){const hp=handOf(shooter(),side());bananas=[{x:hp.x,y:hp.y,vx,vy,rot:0,t:0,by:turn,type:type||'std',n:0,shot:{t:0,a:0}}];shotActive=true;shooter().throwT=performance.now();}},get turn(){return turn}, get score(){return score}, S,g,get ref(){return ref},set ref(v){ref=v},startHold,endHold,get banana(){return bananas[0]||null}, get hp(){return [monkey.hp,target.hp]}, get ys(){return [monkey.y,target.y,monkey.falling,target.falling]}, get mines(){return mines}, get fires(){return fires}, award(p){awardSpecial(p)}, get ammo(){return ammo},pull,setSensor(){hasSensor=true}};
+window.__amc={applyThrowForTest:(m)=>applyThrow(m),net:Net,startOnline,get state(){return {turn,score,hp:[monkey.hp,target.hp],m:[monkey.x,monkey.y],t:[target.x,target.y],roundNo,shotActive,nb:bananas.length,cells:blds.reduce((a,b)=>a+b.cells.reduce((x,y)=>x+y,0),0)}},dbg:{theme(i){theme=THEMES[i];bgCache=null;drawBuildings();initClouds();},noWind(){wind=0;windNow=0;S.wind=false;},crater(x,y,r){addCrater(x,y,r);},aimAt(){const sh=shooter(),fo=victim();return {sx:sh.x,sy:sh.y,fx:fo.x,fy:fo.y};},fire(vx,vy,type){const hp=handOf(shooter(),side());bananas=[{x:hp.x,y:hp.y,vx,vy,rot:0,t:0,by:turn,type:type||'std',n:0,shot:{t:0,a:0}}];shotActive=true;shooter().throwT=performance.now();}},get turn(){return turn}, get score(){return score}, S,g,get ref(){return ref},set ref(v){ref=v},startHold,endHold,get banana(){return bananas[0]||null}, get hp(){return [monkey.hp,target.hp]}, get ys(){return [monkey.y,target.y,monkey.falling,target.falling]}, get mines(){return mines}, get fires(){return fires}, award(p){awardSpecial(p)}, get ammo(){return ammo},pull,setSensor(){hasSensor=true}};
 </script>
 </body>
 </html>
