@@ -12,7 +12,7 @@
   #ui p{margin:0;max-width:560px;line-height:1.45;color:#b8c2cc}
   button{font:600 17px system-ui;padding:12px 26px;border:0;border-radius:10px;background:#2f81f7;color:#fff;cursor:pointer}
   button.sec{background:#30363d}
-  #cam{position:fixed;right:12px;bottom:12px;width:240px;border:2px solid #30363d;border-radius:8px;display:none}
+  #cam{position:fixed;right:12px;bottom:12px;width:340px;border:2px solid #30363d;border-radius:8px;display:none;cursor:crosshair}
   #hud{position:fixed;left:12px;top:10px;font:13px monospace;color:#8b949e;white-space:pre}
   #score{position:fixed;left:0;right:0;top:8px;text-align:center;font:700 34px system-ui;pointer-events:none}
   #msg{position:fixed;left:0;right:0;top:46%;text-align:center;font:700 30px system-ui;pointer-events:none;text-shadow:0 2px 8px #000}
@@ -67,7 +67,7 @@ function resize() { cv.width = innerWidth * devicePixelRatio; cv.height = innerH
 addEventListener('resize', resize); resize();
 
 // ---- colour tracking ----
-let target = {h: 120, tol: 22};          // hue in degrees (green by default)
+let target = {h: 120, tol: 28, smin: .25, vmin: .25};   // hue in degrees (green by default) + learned thresholds
 let calibrated = false;
 let track = {ok: false, nx: .5, ny: .5, n: 0};
 const hist = [];                         // recent positions for velocity {t,nx,ny}
@@ -83,18 +83,23 @@ function rgb2hsv(r, g2, b) {
 }
 function hueDist(a, b) { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; }
 
-function calibrate(px) {
-  // pick the most saturated+bright pixels in the centre box, average their hue
-  const x0 = CW * .4 | 0, x1 = CW * .6 | 0, y0 = CH * .35 | 0, y1 = CH * .65 | 0, cand = [];
-  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+function calibrate(px, box) {
+  // pick the most saturated+bright pixels in the box, learn hue AND how saturated/bright the phone looks
+  const [x0, x1, y0, y1] = box || [CW * .4 | 0, CW * .6 | 0, CH * .35 | 0, CH * .65 | 0], cand = [];
+  for (let y = Math.max(0, y0); y < Math.min(CH, y1); y++) for (let x = Math.max(0, x0); x < Math.min(CW, x1); x++) {
     const i = (y * CW + x) * 4, [h, s, v] = rgb2hsv(px[i], px[i+1], px[i+2]);
-    cand.push([s * v, h]);
+    cand.push([s * v, h, s, v]);
   }
+  if (!cand.length) return;
   cand.sort((a, b) => b[0] - a[0]);
-  const top = cand.slice(0, Math.max(8, cand.length / 8 | 0));
-  let sx = 0, sy = 0;
-  for (const c of top) { sx += Math.cos(c[1] * Math.PI / 180); sy += Math.sin(c[1] * Math.PI / 180); }
+  const top = cand.slice(0, Math.max(6, cand.length / 6 | 0));
+  let sx = 0, sy = 0; const ss = [], vs = [];
+  for (const c of top) { sx += Math.cos(c[1] * Math.PI / 180); sy += Math.sin(c[1] * Math.PI / 180); ss.push(c[2]); vs.push(c[3]); }
+  ss.sort((a, b) => a - b); vs.sort((a, b) => a - b);
+  const medS = ss[ss.length >> 1], medV = vs[vs.length >> 1];
   target.h = (Math.atan2(sy, sx) * 180 / Math.PI + 360) % 360;
+  target.smin = Math.max(.12, medS * .5);
+  target.vmin = Math.max(.15, medV * .5);
   calibrated = true;
 }
 
@@ -103,7 +108,7 @@ function trackFrame(now) {
   cg.save(); cg.translate(CW, 0); cg.scale(-1, 1);           // mirror like a selfie
   cg.drawImage(video, 0, 0, CW, CH); cg.restore();
   const img = cg.getImageData(0, 0, CW, CH), px = img.data;
-  if (wantCal) { calibrate(px); wantCal = false; }
+  if (wantCal) { calibrate(px, calBox); wantCal = false; calBox = null; track.ok = false; }
   let sx = 0, sy = 0, n = 0;
   // search window around last position when tracked, otherwise whole frame
   let xa = 0, xb = CW, ya = 0, yb = CH;
@@ -114,7 +119,7 @@ function trackFrame(now) {
   }
   for (let y = ya; y < yb; y++) for (let x = xa; x < xb; x++) {
     const i = (y * CW + x) * 4, [h, s, v] = rgb2hsv(px[i], px[i+1], px[i+2]);
-    if (s > .38 && v > .38 && hueDist(h, target.h) < target.tol) {
+    if (s > target.smin && v > target.vmin && hueDist(h, target.h) < target.tol) {
       sx += x; sy += y; n++;
       px[i] = 255; px[i+1] = 0; px[i+2] = 0;                   // mark in preview
     }
@@ -291,7 +296,7 @@ function render() {
 }
 
 // ---------- LOOP ----------
-let last = performance.now(), fpsN = 0, fpsT = 0, fps = 0, wantCal = false;
+let last = performance.now(), fpsN = 0, fpsT = 0, fps = 0, wantCal = false, calBox = null;
 function loop(now) {
   const dt = Math.min(.05, (now - last) / 1000); last = now;
   trackFrame(now);
@@ -304,9 +309,9 @@ function loop(now) {
   const v = paddleVel();
   hud.textContent =
     'fps ' + fps.toFixed(0) + '   phone ' + (track.ok ? 'SEEN (' + track.n + 'px)' : 'LOST') +
-    '\nswing ' + Math.hypot(v.vx, v.vy).toFixed(2) + '   hue ' + target.h.toFixed(0) +
+    '\nswing ' + Math.hypot(v.vx, v.vy).toFixed(2) + '   hue ' + target.h.toFixed(0) + '  s>' + target.smin.toFixed(2) + ' v>' + target.vmin.toFixed(2) +
     '\n' + lastHitInfo +
-    '\n[C] calibrate colour  [SPACE] serve/pause';
+    '\n[C] calibrate colour (or CLICK the phone in the camera view)  [SPACE] serve/pause';
   requestAnimationFrame(loop);
 }
 
@@ -317,7 +322,7 @@ async function startCam() {
     await video.play();
     document.getElementById('ui').style.display = 'none';
     camC.style.display = 'block';
-    msgEl.textContent = 'Hold the green phone inside the yellow box, press C';
+    msgEl.textContent = 'Click on the phone in the camera view (bottom right) – or hold it in the yellow box and press C';
     requestAnimationFrame(loop);
   } catch (e) {
     alert('Camera not available: ' + e.message);
@@ -325,6 +330,13 @@ async function startCam() {
 }
 if (!IS_PHONE) {
   document.getElementById('startBtn').onclick = startCam;
+  // click on the phone in the camera preview = learn its colour right there
+  camC.addEventListener('click', e => {
+    const r = camC.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width * CW | 0, y = (e.clientY - r.top) / r.height * CH | 0;
+    calBox = [x - 5, x + 6, y - 5, y + 6]; wantCal = true;
+    msgEl.textContent = 'Colour set – press SPACE to serve';
+  });
   addEventListener('keydown', e => {
     if (e.code === 'KeyC') { wantCal = true; msgEl.textContent = 'Colour set – press SPACE to serve'; }
     if (e.code === 'Space') {
