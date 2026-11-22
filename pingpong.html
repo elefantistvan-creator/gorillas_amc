@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Ping Pong Cam – prototype</title>
+<style>
+  html,body{margin:0;height:100%;background:#0d1117;color:#e6edf3;font-family:system-ui,sans-serif;overflow:hidden}
+  #game{position:fixed;inset:0;width:100%;height:100%;display:block}
+  #ui{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;text-align:center;background:rgba(13,17,23,.92)}
+  #ui h1{margin:0;font-size:28px}
+  #ui p{margin:0;max-width:560px;line-height:1.45;color:#b8c2cc}
+  button{font:600 17px system-ui;padding:12px 26px;border:0;border-radius:10px;background:#2f81f7;color:#fff;cursor:pointer}
+  button.sec{background:#30363d}
+  #cam{position:fixed;right:12px;bottom:12px;width:240px;border:2px solid #30363d;border-radius:8px;display:none}
+  #hud{position:fixed;left:12px;top:10px;font:13px monospace;color:#8b949e;white-space:pre}
+  #score{position:fixed;left:0;right:0;top:8px;text-align:center;font:700 34px system-ui;pointer-events:none}
+  #msg{position:fixed;left:0;right:0;top:46%;text-align:center;font:700 30px system-ui;pointer-events:none;text-shadow:0 2px 8px #000}
+  #phone{position:fixed;inset:0;display:none;align-items:center;justify-content:center;font:600 18px system-ui;color:rgba(0,0,0,.35)}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<canvas id="cam"></canvas>
+<div id="hud"></div>
+<div id="score"></div>
+<div id="msg"></div>
+<div id="ui">
+  <h1>Ping Pong Cam</h1>
+  <p>Prototype. The laptop camera follows your phone. Open this same page on the phone with <b>?phone</b> at the end – it turns into a bright green paddle.</p>
+  <p id="phoneUrl" style="font:15px monospace;color:#58a6ff"></p>
+  <button id="startBtn">Start camera</button>
+</div>
+<div id="phone">tap = change colour</div>
+
+<script>
+// ---------- PHONE MODE: just a bright coloured screen ----------
+const IS_PHONE = location.search.includes('phone');
+if (IS_PHONE) {
+  document.getElementById('ui').style.display = 'none';
+  const ph = document.getElementById('phone');
+  ph.style.display = 'flex';
+  const cols = ['#00ff00', '#ff00ff', '#00ffff', '#ffff00'];
+  let ci = 0;
+  document.body.style.background = cols[0];
+  ph.onclick = () => {
+    ci = (ci + 1) % cols.length; document.body.style.background = cols[ci];
+    if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(()=>{});
+  };
+  if (navigator.wakeLock) navigator.wakeLock.request('screen').catch(()=>{});
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && navigator.wakeLock) navigator.wakeLock.request('screen').catch(()=>{});
+  });
+} else {
+  document.getElementById('phoneUrl').textContent = location.origin + location.pathname + '?phone';
+}
+
+// ---------- LAPTOP MODE ----------
+const cv = document.getElementById('game'), g = cv.getContext('2d');
+const camC = document.getElementById('cam'), cg = camC.getContext('2d', {willReadFrequently: true});
+const hud = document.getElementById('hud'), scoreEl = document.getElementById('score'), msgEl = document.getElementById('msg');
+const CW = 160, CH = 120;               // processing resolution
+camC.width = CW; camC.height = CH;
+let video = null;
+
+function resize() { cv.width = innerWidth * devicePixelRatio; cv.height = innerHeight * devicePixelRatio; }
+addEventListener('resize', resize); resize();
+
+// ---- colour tracking ----
+let target = {h: 120, tol: 22};          // hue in degrees (green by default)
+let calibrated = false;
+let track = {ok: false, nx: .5, ny: .5, n: 0};
+const hist = [];                         // recent positions for velocity {t,nx,ny}
+
+function rgb2hsv(r, g2, b) {
+  const mx = Math.max(r, g2, b), mn = Math.min(r, g2, b), d = mx - mn;
+  let h = 0;
+  if (d) {
+    if (mx === r) h = ((g2 - b) / d) % 6; else if (mx === g2) h = (b - r) / d + 2; else h = (r - g2) / d + 4;
+    h *= 60; if (h < 0) h += 360;
+  }
+  return [h, mx ? d / mx : 0, mx / 255];
+}
+function hueDist(a, b) { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; }
+
+function calibrate(px) {
+  // pick the most saturated+bright pixels in the centre box, average their hue
+  const x0 = CW * .4 | 0, x1 = CW * .6 | 0, y0 = CH * .35 | 0, y1 = CH * .65 | 0, cand = [];
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+    const i = (y * CW + x) * 4, [h, s, v] = rgb2hsv(px[i], px[i+1], px[i+2]);
+    cand.push([s * v, h]);
+  }
+  cand.sort((a, b) => b[0] - a[0]);
+  const top = cand.slice(0, Math.max(8, cand.length / 8 | 0));
+  let sx = 0, sy = 0;
+  for (const c of top) { sx += Math.cos(c[1] * Math.PI / 180); sy += Math.sin(c[1] * Math.PI / 180); }
+  target.h = (Math.atan2(sy, sx) * 180 / Math.PI + 360) % 360;
+  calibrated = true;
+}
+
+function trackFrame(now) {
+  if (!video || video.readyState < 2) return;
+  cg.save(); cg.translate(CW, 0); cg.scale(-1, 1);           // mirror like a selfie
+  cg.drawImage(video, 0, 0, CW, CH); cg.restore();
+  const img = cg.getImageData(0, 0, CW, CH), px = img.data;
+  if (wantCal) { calibrate(px); wantCal = false; }
+  let sx = 0, sy = 0, n = 0;
+  // search window around last position when tracked, otherwise whole frame
+  let xa = 0, xb = CW, ya = 0, yb = CH;
+  if (track.ok) {
+    const R = 34;
+    xa = Math.max(0, track.nx * CW - R | 0); xb = Math.min(CW, track.nx * CW + R | 0);
+    ya = Math.max(0, track.ny * CH - R | 0); yb = Math.min(CH, track.ny * CH + R | 0);
+  }
+  for (let y = ya; y < yb; y++) for (let x = xa; x < xb; x++) {
+    const i = (y * CW + x) * 4, [h, s, v] = rgb2hsv(px[i], px[i+1], px[i+2]);
+    if (s > .38 && v > .38 && hueDist(h, target.h) < target.tol) {
+      sx += x; sy += y; n++;
+      px[i] = 255; px[i+1] = 0; px[i+2] = 0;                   // mark in preview
+    }
+  }
+  cg.putImageData(img, 0, 0);
+  if (n >= 10) {
+    const nx = sx / n / CW, ny = sy / n / CH;
+    // light smoothing – keep it fast
+    track.nx = track.ok ? track.nx * .35 + nx * .65 : nx;
+    track.ny = track.ok ? track.ny * .35 + ny * .65 : ny;
+    track.ok = true; track.n = n;
+    hist.push({t: now, nx: track.nx, ny: track.ny});
+  } else { track.ok = false; track.n = n; }
+  while (hist.length && now - hist[0].t > 120) hist.shift();
+  // guide box when not calibrated
+  if (!calibrated) {
+    cg.strokeStyle = '#ff0'; cg.lineWidth = 1;
+    cg.strokeRect(CW * .4, CH * .35, CW * .2, CH * .3);
+  }
+  if (track.ok) {
+    cg.strokeStyle = '#0ff'; cg.beginPath(); cg.arc(track.nx * CW, track.ny * CH, 6, 0, 7); cg.stroke();
+  }
+}
+function paddleVel() {                   // normalized units per second
+  if (hist.length < 2) return {vx: 0, vy: 0};
+  const a = hist[0], b = hist[hist.length - 1], dt = (b.t - a.t) / 1000;
+  if (dt <= 0) return {vx: 0, vy: 0};
+  return {vx: (b.nx - a.nx) / dt, vy: (b.ny - a.ny) / dt};
+}
+
+// ---------- GAME (metres) ----------
+const TL = 2.74, TW = 1.525, NET_Z = TL / 2, NET_H = .1525, G = 9.81;
+const PADDLE_R = .16;                    // generous hit radius
+const LAT = .08;                         // camera latency compensation (s)
+let ball = null, score = [0, 0], state = 'idle', stateT = 0, rally = 0;
+let paddle = {x: 0, y: .25};
+let lastHitInfo = '';
+
+function paddleFromTrack() {
+  // camera frame = playing area. bottom of image = table level
+  const v = paddleVel();
+  const nx = track.nx + v.vx * LAT, ny = track.ny + v.vy * LAT;
+  paddle.x = (nx - .5) * TW * 1.5;
+  paddle.y = (1 - ny) * .65;
+}
+
+function serve() {
+  // opponent serves toward the player's half
+  const x0 = (Math.random() - .5) * .6;
+  ball = {x: x0, y: .3, z: TL + .1, vx: 0, vy: 0, vz: 0, side: 0, bounced: false, from: 'cpu'};
+  aimBall(ball, (Math.random() - .5) * TW * .7, NET_Z * (.35 + Math.random() * .35), 3.6 + rally * .05, -1);
+  state = 'play';
+}
+// set velocities so ball lands at (tx, tz) moving with |vz| = sp in direction dir (-1 toward player)
+function aimBall(b, tx, tz, sp, dir) {
+  const dz = tz - b.z, t = Math.abs(dz) / sp;
+  b.vz = dir * sp;
+  b.vx = (tx - b.x) / t;
+  b.vy = (0 - b.y + .5 * G * t * t) / t;
+  b.bounced = false;
+}
+
+function point(who, why) {
+  score[who]++; state = 'pause'; stateT = 1.4; rally = 0;
+  msgEl.textContent = (who === 0 ? 'YOUR POINT' : 'CPU POINT') + ' – ' + why;
+}
+
+function step(dt) {
+  if (state === 'pause') { stateT -= dt; if (stateT <= 0) { msgEl.textContent = ''; serve(); } return; }
+  if (state !== 'play' || !ball) return;
+  const b = ball, pz = b.z;
+  b.vy -= G * dt; b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt;
+
+  // net
+  if ((pz - NET_Z) * (b.z - NET_Z) <= 0 && b.y < NET_H) {
+    return point(b.vz < 0 ? 0 : 1, 'net');
+  }
+  // table bounce
+  if (b.y <= 0 && b.vy < 0) {
+    const onTable = Math.abs(b.x) <= TW / 2 && b.z >= 0 && b.z <= TL;
+    if (!onTable) return point(b.vz < 0 ? 0 : 1, 'out');
+    const myHalf = b.z < NET_Z;
+    const goodHalf = b.vz < 0 ? myHalf : !myHalf;
+    if (!goodHalf || b.bounced) return point(b.vz < 0 ? 0 : 1, b.bounced ? 'double bounce' : 'wrong side');
+    b.y = 0; b.vy = -b.vy * .88; b.bounced = true;
+  }
+  if (b.y < -0.5) return point(b.vz < 0 ? 0 : 1, 'out');
+
+  // player hitting plane z = 0 (crossing toward the player)
+  if (b.vz < 0 && pz > 0 && b.z <= 0) {
+    if (!b.bounced) return point(0, 'out (no bounce)');
+    const bx = b.x, by = b.y;                     // crossing point (substep is tiny)
+    paddleFromTrack();
+    const d = Math.hypot(bx - paddle.x, by - paddle.y);
+    if (track.ok && d < PADDLE_R) {
+      const v = paddleVel();
+      const swing = Math.hypot(v.vx, v.vy);         // normalized/s
+      // power -> landing depth on the far half; sideways swing -> direction
+      const landZ = NET_Z + .25 + Math.min(swing, 3.2) * .55;   // too hard => long/out
+      const landX = bx + v.vx * TW * .55;
+      const sp = 3.4 + Math.min(swing, 3.5) * 1.3;
+      b.z = 0.001;
+      aimBall(b, landX, landZ, sp, 1);
+      b.from = 'me'; rally++;
+      lastHitInfo = 'hit  swing ' + swing.toFixed(2) + '  dist ' + d.toFixed(2);
+      flash = .15;
+    } else {
+      lastHitInfo = track.ok ? 'miss  dist ' + d.toFixed(2) : 'miss  (phone not seen)';
+      return point(1, 'missed');
+    }
+  }
+  // opponent returns at far end
+  if (b.vz > 0 && b.z >= TL + .15) {
+    if (!b.bounced) return point(1, 'out');
+    // simple AI: misses wide, fast shots sometimes
+    const diff = Math.abs(b.x) / (TW / 2) * .5 + Math.max(0, b.vz - 5) * .12;
+    if (Math.random() < diff * .55) return point(0, 'CPU missed');
+    aimBall(b, (Math.random() - .5) * TW * .8, NET_Z * (.3 + Math.random() * .45), 3.6 + rally * .08, -1);
+    b.from = 'cpu';
+  }
+}
+
+// ---------- RENDER (simple perspective from behind the player's end) ----------
+let flash = 0;
+function proj(x, y, z) {
+  const W = cv.width, H = cv.height, cam = {y: 1.25, z: -1.6}, f = H * .95;
+  const dz = z - cam.z;
+  return {x: W / 2 + x * f / dz, y: H * .30 + (cam.y - y) * f / dz, s: f / dz};
+}
+function poly(pts, fill, stroke) {
+  g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.closePath();
+  if (fill) { g.fillStyle = fill; g.fill(); }
+  if (stroke) { g.strokeStyle = stroke; g.stroke(); }
+}
+function render() {
+  const W = cv.width, H = cv.height;
+  g.fillStyle = '#10161f'; g.fillRect(0, 0, W, H);
+  // floor glow
+  const hw = TW / 2;
+  const c = [proj(-hw, 0, 0), proj(hw, 0, 0), proj(hw, 0, TL), proj(-hw, 0, TL)];
+  // table legs/side
+  poly([c[0], c[1], proj(hw, -.06, 0), proj(-hw, -.06, 0)], '#0a2a4a');
+  poly(c, '#1565c0');
+  g.lineWidth = 3 * devicePixelRatio;
+  poly(c, null, '#e8eef5');
+  const m0 = proj(0, 0, 0), m1 = proj(0, 0, TL);
+  g.lineWidth = 1.5 * devicePixelRatio; g.strokeStyle = 'rgba(232,238,245,.6)';
+  g.beginPath(); g.moveTo(m0.x, m0.y); g.lineTo(m1.x, m1.y); g.stroke();
+  // ball shadow (big help for depth)
+  if (ball && ball.z >= 0 && ball.z <= TL && Math.abs(ball.x) <= hw) {
+    const s = proj(ball.x, 0, ball.z);
+    g.fillStyle = 'rgba(0,0,0,.35)'; g.beginPath(); g.ellipse(s.x, s.y, .025 * s.s, .01 * s.s, 0, 0, 7); g.fill();
+  }
+  const drawNet = () => {
+    const n = [proj(-hw - .15, 0, NET_Z), proj(hw + .15, 0, NET_Z), proj(hw + .15, NET_H, NET_Z), proj(-hw - .15, NET_H, NET_Z)];
+    poly(n, 'rgba(220,230,240,.35)', '#dfe6ee');
+  };
+  const drawBall = () => {
+    if (!ball) return;
+    const p = proj(ball.x, ball.y, ball.z);
+    g.fillStyle = '#ffb547'; g.beginPath(); g.arc(p.x, p.y, Math.max(2, .022 * p.s), 0, 7); g.fill();
+  };
+  // ball behind net first
+  if (ball && ball.z > NET_Z) { drawBall(); drawNet(); } else { drawNet(); drawBall(); }
+  // paddle (hitting plane z=0)
+  paddleFromTrack();
+  const pp = proj(paddle.x, paddle.y, 0);
+  g.globalAlpha = track.ok ? .55 : .18;
+  g.fillStyle = flash > 0 ? '#fff' : '#e53935';
+  g.beginPath(); g.arc(pp.x, pp.y, PADDLE_R * pp.s * .7, 0, 7); g.fill();
+  g.globalAlpha = 1;
+  g.strokeStyle = '#ffcdd2'; g.lineWidth = 2 * devicePixelRatio;
+  g.beginPath(); g.arc(pp.x, pp.y, PADDLE_R * pp.s, 0, 7); g.stroke();
+}
+
+// ---------- LOOP ----------
+let last = performance.now(), fpsN = 0, fpsT = 0, fps = 0, wantCal = false;
+function loop(now) {
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  trackFrame(now);
+  // physics substeps for fast ball
+  const N = 4; for (let i = 0; i < N; i++) step(dt / N);
+  if (flash > 0) flash -= dt;
+  render();
+  scoreEl.textContent = score[0] + ' : ' + score[1];
+  fpsN++; fpsT += dt; if (fpsT > .5) { fps = fpsN / fpsT; fpsN = 0; fpsT = 0; }
+  const v = paddleVel();
+  hud.textContent =
+    'fps ' + fps.toFixed(0) + '   phone ' + (track.ok ? 'SEEN (' + track.n + 'px)' : 'LOST') +
+    '\nswing ' + Math.hypot(v.vx, v.vy).toFixed(2) + '   hue ' + target.h.toFixed(0) +
+    '\n' + lastHitInfo +
+    '\n[C] calibrate colour  [SPACE] serve/pause';
+  requestAnimationFrame(loop);
+}
+
+async function startCam() {
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({video: {width: 640, height: 480, frameRate: {ideal: 60}, facingMode: 'user'}, audio: false});
+    video = document.createElement('video'); video.srcObject = s; video.muted = true; video.playsInline = true;
+    await video.play();
+    document.getElementById('ui').style.display = 'none';
+    camC.style.display = 'block';
+    msgEl.textContent = 'Hold the green phone inside the yellow box, press C';
+    requestAnimationFrame(loop);
+  } catch (e) {
+    alert('Camera not available: ' + e.message);
+  }
+}
+if (!IS_PHONE) {
+  document.getElementById('startBtn').onclick = startCam;
+  addEventListener('keydown', e => {
+    if (e.code === 'KeyC') { wantCal = true; msgEl.textContent = 'Colour set – press SPACE to serve'; }
+    if (e.code === 'Space') {
+      e.preventDefault();
+      if (state === 'idle' || state === 'stop') { msgEl.textContent = ''; serve(); }
+      else { state = 'stop'; msgEl.textContent = 'Paused – SPACE to continue'; ball = null; }
+    }
+  });
+}
+</script>
+</body>
+</html>
