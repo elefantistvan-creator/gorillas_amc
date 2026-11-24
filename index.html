@@ -157,7 +157,7 @@
       <p>The dotted arc shows the path in <b>calm air</b> — judge the wind yourself: the arrow at the top is <span style="color:#60a5fa">blue</span> when weak, <span style="color:#f87171">red</span> when strong.</p>
       <p>The harder and longer you pull, the more your hand trembles. You have 10 seconds per turn.</p>
       <p><b>Bananas</b> (bottom): <b>Banana</b> plain · <b>Drill</b> bores through buildings · <b>Split</b> splits into three at the top · <b>Bounce</b> bounces three times, then stays there as a mine that hurts anyone who comes close · <b>Fire</b> leaves flames that burn for 2 turns · <b>Atom</b> huge blast. Special bananas are earned every time your banana damages the opponent (a hit or a near hit), always in this order: Bounce → Split → Drill → Fire → Atom, then again from the start. They last for the whole match.</p>
-      <p><b>Jump</b> ◀ ▶ (green): up to 2 hops before you throw, and 1 retreat hop in the 3 seconds after your banana lands — every turn. Roofs with <b>cracks</b> are unstable: land on one and it loses a whole storey at the end of the turn, with you on it if you don't hop away.</p>
+      <p><b>Jump</b> ◀ ▶ (green): up to 2 hops before you throw, and 1 retreat hop in the 3 seconds after your banana lands — every turn. Roofs with a <b>cracked top storey</b> are unstable (new ones keep appearing): land on one and it loses a whole storey at the end of the turn, with you on it if you don't hop away.</p>
       <p><b>Builds</b> (row above the bananas) take your whole turn and work once per match: <b>Floor+</b> / <b>Floor−</b> raise or lower the whole roof you stand on · <b>Shield</b> held in your hand: a banana that would hit you flies back flat toward the thrower (then the shield is gone); otherwise it soaks 30% blast damage (the drill goes through) · <b>Decoy</b> armed before your throw, doesn't take the turn: when your banana lands a fake gorilla appears on another roof on your side, until your next turn.</p>
       <p><b>Hidden tricks</b> (purple), your opponent doesn't see them: <b>Umbrella</b> catches the next banana (not the drill) · <b>Wind</b> twists the wind for their next throw, while their arrow still shows the old one · <b>Time</b> they get only 4 seconds next turn · <b>Invisible</b> armed before your throw, doesn't take the turn: when your banana lands you vanish, and they only see you in their last 3 seconds.</p>
       <p><b>God mode</b> (both players agree): everything unlimited.</p>
@@ -187,7 +187,7 @@
     <p id="joinStatus"></p>
     <button class="btn ghost" id="bBack2">BACK</button>
   </div>
-  <p style="font-size:11px;opacity:.45;margin-top:10px">build 27</p>
+  <p style="font-size:11px;opacity:.45;margin-top:10px">build 28</p>
 </div>
 <div id="rpause" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(8,10,20,.6);z-index:7;color:#ffd166;font:700 26px system-ui;pointer-events:none;text-shadow:0 2px 8px #000"><span>paused</span></div>
 <div id="rotate">↻ Turn the phone to landscape</div>
@@ -340,7 +340,7 @@ function newTrack(seed){
   wind = S.wind ? Math.round((grng()*2-1)*120) : 0;
   theme=THEMES[Math.floor(grng()*THEMES.length)]; bgCache=null;
   drawBuildings(); for(const a of [monkey,target]){ let yy=0; while(yy<WH && !solidAt(a.x,yy+1)) yy++; a.y=yy; }
-  blds.forEach((b,i)=>{ b.unstable = i>=2 && i<=blds.length-3 && grng()<0.25; b.cracked=false; if(b.unstable) drawCracks(b,false); });
+  blds.forEach((b,i)=>{ b.unstable = i>=2 && i<=blds.length-3 && grng()<0.15; b.cracked=false; if(b.unstable) drawCracks(b,false); });
   initClouds(); bananas=[]; mines=[]; fires=[]; chunks=[]; shotActive=false; turnClock=S.turnTime; gustT=0; parts=[]; trail=[]; debris=[]; dust=[]; corpses=[];
   selType=[0,0]; builtThisTurn=false; scopeOn=false; jumpedThisTurn=0; retreat=null; turnThrew=false; invisArm=[false,false]; decoyArm=[false,false]; invis=[false,false]; decoy=null; umbrella=[false,false]; walls=[null,null]; shield=[0,0]; scopeNext=[false,false]; timeNext=[0,0]; windTrick=null;
   if(typeof cpu!=='undefined'){ cpu.state='idle'; cpu.plan=null; cpu.shots=0; }
@@ -782,7 +782,7 @@ function step(dt){
   // during a shot the gust is a function of the shot's own clock (same on both phones); otherwise local time (display only)
   const gt=shotActive?(shotT+shotPh):gustT;
   if(shotActive) shotT+=dt;
-  windNow=wind+gA*(Math.sin(gt*0.55+1.3)*0.6+Math.sin(gt*1.37)*0.4);
+  windNow=wind+gA*(Math.sin(gt*0.165+1.3)*0.6+Math.sin(gt*0.41)*0.4);   // slow drift: about 30% of the old speed
   windSeen=(windTrick&&windTrick.active&&viewerIs(windTrick.victim)&&!scopeOn)? windNow-wind+windTrick.shown : windNow;
   if(Math.abs(windNow-lastWindNow)>12){ windShow=1.5; lastWindNow=windNow; }  // a noticeable change: show a gust
   if(windShow>0) windShow-=dt;
@@ -909,7 +909,7 @@ function sensorsReady(){ return document.getElementById('overlay').style.display
 function nextTurn(){ builtThisTurn=false; jumpedThisTurn=0; retreat=null; turnThrew=false; hintT=Math.max(hintT,0); SND.chime(); turn=1-turn;
   invis[turn]=false; if(decoy && decoy.p===turn) decoy=null;   // your disguise lasts until your next turn
   turnWait=0.7; bannerT=1.4; turnClock=S.turnTime;
-  turnSetup(); buildAmmoUI(); burnTick(); sendSync(); }
+  spawnUnstable(); turnSetup(); buildAmmoUI(); burnTick(); sendSync(); }
 // what the new player's turn brings: their scope, a time squeeze or a wind trick aimed at them
 function turnSetup(){
   scopeOn=scopeNext[turn]; scopeNext[turn]=false;
@@ -1182,7 +1182,7 @@ function render(now){
       const d=Math.sign(L); ctx.beginPath(); ctx.moveTo(WW/2+L/2+d*12,y0); ctx.lineTo(WW/2+L/2-d*5,y0-10); ctx.lineTo(WW/2+L/2-d*5,y0+10); ctx.fill(); }
     else { ctx.beginPath(); ctx.arc(WW/2,y0,5,0,7); ctx.fill(); }
     ctx.font='bold 26px system-ui'; ctx.textAlign='center'; ctx.fillStyle='rgba(0,0,0,.5)'; ctx.fillText(Math.round(Math.abs(windSeen)),WW/2+1,132+1);
-    ctx.fillStyle=col; ctx.fillText(Math.round(Math.abs(windSeen)),WW/2,132); }
+    ctx.fillStyle='#d6dbe2'; ctx.fillText(Math.round(Math.abs(windSeen)),WW/2,132); }
   if(Net.mode!=='local'){ ctx.font='bold 16px system-ui'; ctx.textAlign='center'; ctx.fillStyle=Net.myTurn()?'#ffd166':'rgba(255,255,255,.6)'; ctx.fillText(Net.myTurn()?'YOUR TURN':'WAITING…',WW/2,160); }
 
   drawHUD();
@@ -1477,10 +1477,37 @@ function startDisguise(){
 }
 // unstable buildings: landing on one cracks it; at the end of the turn it loses a whole storey
 function drawCracks(b,big){
-  const g=bCtx; g.save(); g.strokeStyle=big?'rgba(10,8,8,.95)':'rgba(15,12,12,.85)'; g.lineWidth=big?2.6:2;
-  for(let k=0;k<(big?5:3);k++){ let x=b.x+8+Math.random()*(b.w-16), y=b.y+4; g.beginPath(); g.moveTo(x,y);
-    for(let i=0;i<5;i++){ x+=(Math.random()-.5)*14; y+=8+Math.random()*10; g.lineTo(x,y); } g.stroke(); }
+  // the top storey looks weathered and broken: darker band, chipped plaster, broken edge and branching fissures.
+  // Everything starts at the real roof surface under each point and is painted only onto the wall (never into the sky).
+  const g=bCtx, band=FLOOR+8, surf=x=>{ let y=b.y; while(y<WH && !solidAt(x,y+1)) y++; return y; };
+  g.save(); g.globalCompositeOperation='source-atop';
+  for(let x=b.x;x<b.x+b.w;x+=4){ const t=surf(x+2), gr=g.createLinearGradient(0,t,0,t+band);
+    gr.addColorStop(0,big?'rgba(0,0,0,.38)':'rgba(0,0,0,.24)'); gr.addColorStop(1,'rgba(0,0,0,0)'); g.fillStyle=gr; g.fillRect(x,t,4,band); }
+  for(let i=0;i<(big?16:9);i++){ const w=3+Math.random()*7, h=2+Math.random()*5, x=b.x+Math.random()*(b.w-w);
+    g.fillStyle=`rgba(22,17,15,${.25+Math.random()*.35})`; g.fillRect(x, surf(x+w/2)+Math.random()*band, w, h); }
+  g.fillStyle='rgba(15,11,10,.75)';
+  for(let x=b.x+2;x<b.x+b.w-6;x+=6+Math.random()*10){ const w=3+Math.random()*6, d=2+Math.random()*(big?7:4), t=surf(x+w/2);
+    g.beginPath(); g.moveTo(x,t); g.lineTo(x+w,t); g.lineTo(x+w*.5,t+d); g.closePath(); g.fill(); }
+  for(let k=0;k<(big?5:3);k++){ const x=b.x+8+Math.random()*(b.w-16);
+    fissure(g, x, surf(x), Math.PI/2+(Math.random()-.5)*.9, band*(.55+Math.random()*.5), big?3.2:2.4, 2); }
   g.restore();
+}
+function fissure(g,x,y,ang,len,w,depth){
+  const pts=[[x,y]]; for(let i=0;i<5;i++){ ang+=(Math.random()-.5)*.9; x+=Math.cos(ang)*len/5; y+=Math.sin(ang)*len/5; pts.push([x,y]); }
+  g.lineCap='round'; g.lineJoin='round';
+  for(const [dx,col] of [[1,'rgba(255,255,255,.16)'],[0,'rgba(12,9,8,.92)']]){      // light lip + dark gap = depth
+    g.strokeStyle=col; g.lineWidth=w; g.beginPath(); pts.forEach((p,i)=>i?g.lineTo(p[0]+dx,p[1]+dx):g.moveTo(p[0]+dx,p[1]+dx)); g.stroke(); }
+  if(depth>0) for(let i=1;i<pts.length-1;i++) if(Math.random()<.45) fissure(g,pts[i][0],pts[i][1],ang+(Math.random()<.5?-1:1)*(.6+Math.random()*.6),len*.45,w*.6,depth-1);
+}
+// new cracked roofs keep appearing during the game (same choice on both phones: seeded by the track and the move count)
+function spawnUnstable(){
+  const r=mulberry32((baseSeed^Math.imul(actNo+7,40503))>>>0); if(r()>0.35) return;
+  if(blds.filter(b=>b.unstable).length>=Math.ceil(blds.length*0.35)) return;   // never more than about a third of the city
+  const occ=[bldAt(monkey.x),bldAt(target.x)];
+  const c=blds.filter((b,i)=>i>=1 && i<=blds.length-2 && !b.unstable && !occ.includes(b) && b.h>FLOOR+80);
+  if(!c.length) return;
+  const b=c[Math.floor(r()*c.length)]; b.unstable=true; b.cracked=false; drawCracks(b,false);
+  boom2dust(b.x+b.w/2,b.y);
 }
 function crackOnLanding(ape){ const b=bldAt(ape.x); if(!b || !b.unstable || b.cracked) return;
   b.cracked=true; drawCracks(b,true); shakeT=Math.max(shakeT,0.25); shakeA=Math.max(shakeA,6); SND.thud();
@@ -1898,7 +1925,7 @@ resize(); newTrack(baseSeed); placeBtn(); requestAnimationFrame(loop);
 if('serviceWorker' in navigator && location.protocol==='https:'){ navigator.serviceWorker.register('sw.js').catch(()=>{});
   let reloaded=false; navigator.serviceWorker.addEventListener('controllerchange',()=>{ if(!reloaded){ reloaded=true; location.reload(); } }); }
 // expose for testing
-window.__amc={applyBuildT:(m)=>applyBuild(m), get used(){return used}, get ladder(){return ladder}, setGod(v){godMode=v;}, cpuTest:(n,lvl)=>{const L0=cpuLevel;cpuLevel=lvl;let dmg=0,direct=0;for(let i=0;i<n;i++){newTrack(1000+i);cpu.shots=0;const pl=cpuPlan(),f=handOf(target,-1),r=cpuSim(f.x,f.y,pl.msg.vx,pl.msg.vy,wind,monkey.x,monkey.y-APE_CY);if(r.d<66)dmg++;if(r.d===0)direct++;}cpuLevel=L0;return {dmg,direct,n};},startLocal:(m,n)=>startLocal(m,n),get gm(){return GM}, get names(){return names}, get cpuLevel(){return cpuLevel}, applyThrowForTest:(m)=>applyThrow(m),net:Net,startOnline,snapshot,applySync,get retreat(){return retreat},get mineList(){return mines},get blds(){return blds},get decoy(){return decoy},get invis(){return invis},get shieldV(){return shield},get syncFixes(){return syncFixes},get actNo(){return actNo},addCraterT:(x,y,r)=>addCrater(x,y,r),get remotePaused(){return remotePaused},get state(){return {turn,score,hp:[monkey.hp,target.hp],m:[monkey.x,monkey.y],t:[target.x,target.y],roundNo,shotActive,nb:bananas.length,cells:blds.reduce((a,b)=>a+b.cells.reduce((x,y)=>x+y,0),0)}},dbg:{theme(i){theme=THEMES[i];bgCache=null;drawBuildings();initClouds();},noWind(){wind=0;windNow=0;S.wind=false;},crater(x,y,r){addCrater(x,y,r);},aimAt(){const sh=shooter(),fo=victim();return {sx:sh.x,sy:sh.y,fx:fo.x,fy:fo.y};},spawn(x,y,vx,vy,type,by){bananas.push({x,y,vx,vy,rot:0,t:0.3,by,type:type||'std',n:0,shot:{t:0,a:0}});shotActive=true;},setShield(k,v){shield[k]=v;},get floaters(){return floaters.map(f=>f.text)},fire(vx,vy,type){const hp=handOf(shooter(),side());bananas=[{x:hp.x,y:hp.y,vx,vy,rot:0,t:0,by:turn,type:type||'std',n:0,shot:{t:0,a:0}}];shotActive=true;shooter().throwT=performance.now();}},get turn(){return turn}, get score(){return score}, S,g,get ref(){return ref},set ref(v){ref=v},startHold,endHold,get banana(){return bananas[0]||null}, get hp(){return [monkey.hp,target.hp]}, get ys(){return [monkey.y,target.y,monkey.falling,target.falling]}, get mines(){return mines}, get fires(){return fires}, award(p){awardSpecial(p)}, get ammo(){return ammo},pull,setSensor(){hasSensor=true}};
+window.__amc={applyBuildT:(m)=>applyBuild(m), get used(){return used}, get ladder(){return ladder}, setGod(v){godMode=v;}, cpuTest:(n,lvl)=>{const L0=cpuLevel;cpuLevel=lvl;let dmg=0,direct=0;for(let i=0;i<n;i++){newTrack(1000+i);cpu.shots=0;const pl=cpuPlan(),f=handOf(target,-1),r=cpuSim(f.x,f.y,pl.msg.vx,pl.msg.vy,wind,monkey.x,monkey.y-APE_CY);if(r.d<66)dmg++;if(r.d===0)direct++;}cpuLevel=L0;return {dmg,direct,n};},startLocal:(m,n)=>startLocal(m,n),get gm(){return GM}, get names(){return names}, get cpuLevel(){return cpuLevel}, applyThrowForTest:(m)=>applyThrow(m),net:Net,startOnline,snapshot,applySync,get retreat(){return retreat},get mineList(){return mines},get blds(){return blds},get decoy(){return decoy},get invis(){return invis},get shieldV(){return shield},get syncFixes(){return syncFixes},get actNo(){return actNo},addCraterT:(x,y,r)=>addCrater(x,y,r),get remotePaused(){return remotePaused},get state(){return {turn,score,hp:[monkey.hp,target.hp],m:[monkey.x,monkey.y],t:[target.x,target.y],roundNo,shotActive,nb:bananas.length,cells:blds.reduce((a,b)=>a+b.cells.reduce((x,y)=>x+y,0),0)}},dbg:{crack(i,big){const b=blds[i];b.unstable=true;drawCracks(b,!!big);},theme(i){theme=THEMES[i];bgCache=null;drawBuildings();initClouds();},noWind(){wind=0;windNow=0;S.wind=false;},crater(x,y,r){addCrater(x,y,r);},aimAt(){const sh=shooter(),fo=victim();return {sx:sh.x,sy:sh.y,fx:fo.x,fy:fo.y};},spawn(x,y,vx,vy,type,by){bananas.push({x,y,vx,vy,rot:0,t:0.3,by,type:type||'std',n:0,shot:{t:0,a:0}});shotActive=true;},setShield(k,v){shield[k]=v;},get floaters(){return floaters.map(f=>f.text)},fire(vx,vy,type){const hp=handOf(shooter(),side());bananas=[{x:hp.x,y:hp.y,vx,vy,rot:0,t:0,by:turn,type:type||'std',n:0,shot:{t:0,a:0}}];shotActive=true;shooter().throwT=performance.now();}},get turn(){return turn}, get score(){return score}, S,g,get ref(){return ref},set ref(v){ref=v},startHold,endHold,get banana(){return bananas[0]||null}, get hp(){return [monkey.hp,target.hp]}, get ys(){return [monkey.y,target.y,monkey.falling,target.falling]}, get mines(){return mines}, get fires(){return fires}, award(p){awardSpecial(p)}, get ammo(){return ammo},pull,setSensor(){hasSensor=true}};
 </script>
 </body>
 </html>
