@@ -35,7 +35,7 @@
   .how p{margin:6px 0}
   #overlay small{font-size:12px;opacity:.85;margin-left:6px}
   /* side columns: builds on the left, bananas on the right; all buttons the same size */
-  :root{--bh:min(34px,calc((100vh - 24px)/9 - 4px))}
+  :root{--bh:min(34px,calc((100vh - 24px)/10 - 4px))}
   #builds,#ammo{position:fixed;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:4px;z-index:4}
   #builds{left:6px} #ammo{right:6px}
   #builds button,#ammo button{position:relative;width:52px;height:var(--bh);border-radius:8px;border:1.5px solid rgba(255,255,255,.15);
@@ -156,10 +156,10 @@
       <p><b>Aim (Touch):</b> put your finger down and drag back like a slingshot; lift to throw. Choose the control in Settings.</p>
       <p>The dotted arc shows the path in <b>calm air</b> — judge the wind yourself: the arrow at the top is <span style="color:#60a5fa">blue</span> when weak, <span style="color:#f87171">red</span> when strong.</p>
       <p>The harder and longer you pull, the more your hand trembles. You have 10 seconds per turn.</p>
-      <p><b>Bananas</b> (bottom): <b>Banana</b> plain · <b>Drill</b> bores through buildings · <b>Split</b> splits into three at the top · <b>Bounce</b> bounces three times · <b>Fire</b> leaves flames that burn for 2 turns · <b>Atom</b> huge blast. Special bananas are earned every time your banana damages the opponent (a hit or a near hit), always in this order: Bounce → Split → Drill → Fire → Atom, then again from the start. They last for the whole match.</p>
-      <p><b>Jump</b> ◀ ▶ (green): hop to the next roof before you throw — every turn.</p>
-      <p><b>Builds</b> (row above the bananas) take your whole turn and work once per match: <b>Floor+</b> / <b>Floor−</b> raise or lower the whole roof you stand on · <b>Shield</b> held in your hand, soaks 30% damage (the drill goes through) · <b>Scope</b> next turn the aim arc includes the wind.</p>
-      <p><b>Hidden tricks</b> (purple), your opponent doesn't see them: <b>Umbrella</b> catches the next banana (not the drill) · <b>Wind</b> twists the wind for their next throw, while their arrow still shows the old one · <b>Time</b> they get only 4 seconds next turn.</p>
+      <p><b>Bananas</b> (bottom): <b>Banana</b> plain · <b>Drill</b> bores through buildings · <b>Split</b> splits into three at the top · <b>Bounce</b> bounces three times, then stays there as a mine that hurts anyone who comes close · <b>Fire</b> leaves flames that burn for 2 turns · <b>Atom</b> huge blast. Special bananas are earned every time your banana damages the opponent (a hit or a near hit), always in this order: Bounce → Split → Drill → Fire → Atom, then again from the start. They last for the whole match.</p>
+      <p><b>Jump</b> ◀ ▶ (green): up to 2 hops before you throw, and 1 retreat hop in the 3 seconds after your banana lands — every turn. Roofs with <b>cracks</b> are unstable: land on one and it loses a whole storey at the end of the turn, with you on it if you don't hop away.</p>
+      <p><b>Builds</b> (row above the bananas) take your whole turn and work once per match: <b>Floor+</b> / <b>Floor−</b> raise or lower the whole roof you stand on · <b>Shield</b> held in your hand: a banana that would hit you flies back flat toward the thrower (then the shield is gone); otherwise it soaks 30% blast damage (the drill goes through) · <b>Decoy</b> armed before your throw, doesn't take the turn: when your banana lands a fake gorilla appears on another roof on your side, until your next turn.</p>
+      <p><b>Hidden tricks</b> (purple), your opponent doesn't see them: <b>Umbrella</b> catches the next banana (not the drill) · <b>Wind</b> twists the wind for their next throw, while their arrow still shows the old one · <b>Time</b> they get only 4 seconds next turn · <b>Invisible</b> armed before your throw, doesn't take the turn: when your banana lands you vanish, and they only see you in their last 3 seconds.</p>
       <p><b>God mode</b> (both players agree): everything unlimited.</p>
       <p><b>Damage:</b> direct hits, near misses, fire, falling. Buildings crumble — shoot the floor away and the gorilla falls.</p>
       <p style="opacity:.7">On a PC: press on the track and drag back like a slingshot.</p>
@@ -187,7 +187,7 @@
     <p id="joinStatus"></p>
     <button class="btn ghost" id="bBack2">BACK</button>
   </div>
-  <p style="font-size:11px;opacity:.45;margin-top:10px">build 25</p>
+  <p style="font-size:11px;opacity:.45;margin-top:10px">build 26</p>
 </div>
 <div id="rpause" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(8,10,20,.6);z-index:7;color:#ffd166;font:700 26px system-ui;pointer-events:none;text-shadow:0 2px 8px #000"><span>paused</span></div>
 <div id="rotate">↻ Turn the phone to landscape</div>
@@ -340,8 +340,9 @@ function newTrack(seed){
   wind = S.wind ? Math.round((grng()*2-1)*120) : 0;
   theme=THEMES[Math.floor(grng()*THEMES.length)]; bgCache=null;
   drawBuildings(); for(const a of [monkey,target]){ let yy=0; while(yy<WH && !solidAt(a.x,yy+1)) yy++; a.y=yy; }
+  blds.forEach((b,i)=>{ b.unstable = i>=2 && i<=blds.length-3 && grng()<0.25; b.cracked=false; if(b.unstable) drawCracks(b,false); });
   initClouds(); bananas=[]; mines=[]; fires=[]; chunks=[]; shotActive=false; turnClock=S.turnTime; gustT=0; parts=[]; trail=[]; debris=[]; dust=[]; corpses=[];
-  selType=[0,0]; builtThisTurn=false; scopeOn=false; jumpedThisTurn=false; umbrella=[false,false]; walls=[null,null]; shield=[0,0]; scopeNext=[false,false]; timeNext=[0,0]; windTrick=null;
+  selType=[0,0]; builtThisTurn=false; scopeOn=false; jumpedThisTurn=0; retreat=null; turnThrew=false; invisArm=[false,false]; decoyArm=[false,false]; invis=[false,false]; decoy=null; umbrella=[false,false]; walls=[null,null]; shield=[0,0]; scopeNext=[false,false]; timeNext=[0,0]; windTrick=null;
   if(typeof cpu!=='undefined'){ cpu.state='idle'; cpu.plan=null; cpu.shots=0; }
 }
 let apeOnRoofLater=false;
@@ -693,7 +694,7 @@ function applyThrow(m){
   const hp=handOf(shooter(),side());
   if(ammo[turn][m.type]>0) ammo[turn][m.type]--;
   bananas=[{x:hp.x,y:hp.y,vx:m.vx,vy:m.vy,rot:0,t:0,by:turn,type:m.type,n:0,shot:{t:m.pt,a:m.pa}}];
-  shotActive=true; shotT=0; shotPh=m.ph; actNo++;
+  shotActive=true; shotT=0; shotPh=m.ph; actNo++; turnThrew=true;
   if(ammo[turn][m.type]===0) selType[turn]=0;
   buildAmmoUI();
   shooter().throwT=performance.now();
@@ -801,7 +802,7 @@ function step(dt){
       const me=b.by?target:monkey, foe=b.by?monkey:target;
       // split: at the top of the arc, become three
       if(b.type==='split' && b.vy>0 && !b.apexY) b.apexY=b.y;
-      if(b.type==='split' && b.apexY && (b.y-b.apexY>150 || Math.hypot(b.x-foe.x,b.y-foe.y)<260)){ SND.pop();
+      if(b.type==='split' && b.apexY && (b.y-b.apexY>90 || Math.hypot(b.x-foe.x,b.y-foe.y)<340)){ SND.pop();
         b.dead=true; const sp=Math.hypot(b.vx,b.vy)||1, base=Math.atan2(b.vy,b.vx);
         for(const d of [-0.2,0,0.2]){ const a=base+d; bananas.push({x:b.x,y:b.y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,rot:b.rot,t:0.3,by:b.by,type:'mini',n:0,shot:b.shot}); }
         parts.push(...Array.from({length:10},()=>({x:b.x,y:b.y,vx:(Math.random()-.5)*200,vy:(Math.random()-.5)*200,l:.4,c:'#7ee081'})));
@@ -813,6 +814,17 @@ function step(dt){
           umbrella[o]=false; b.dead=true; umbShow[o]=1.4; SND.bounce(); SND.pop();
           for(let k=0;k<14;k++) parts.push({x:b.x,y:b.y,vx:(Math.random()-.5)*260,vy:-Math.random()*200,l:.5,c:'#ffd23f'});
           floaters.push({x:oa.x,y:oa.y-130,text:'UMBRELLA!',t:0,col:'#93c5fd'}); break; } }
+      { const o=b.by?0:1, oa=o?target:monkey;
+        if(shield[o]>0 && oa.alive && b.type!=='drill' && Math.hypot(b.x-oa.x,b.y-(oa.y-APE_CY))<APE_R+14){
+          const dir=o?-1:1, V=930, A=0.35;
+          shield[o]=0; shieldHit[o]=0.5; b.by=o; b.t=0; b.apexY=0; b.n=0; b.shot=Object.assign({},b.shot,{awarded:true});
+          b.x=oa.x+dir*(APE_R+18); b.y=oa.y-APE_CY; b.vx=dir*Math.cos(A)*V; b.vy=-Math.sin(A)*V;
+          floaters.push({x:oa.x,y:oa.y-120,text:'DEFLECT!',t:0,col:'#93c5fd'}); SND.bounce(); vib(30);
+          for(let k=0;k<10;k++) parts.push({x:b.x,y:b.y,vx:(Math.random()-.5)*220,vy:-Math.random()*180,l:.4,c:'#bfdbfe'});
+          break; } }
+      // a decoy pops when a banana flies through it
+      if(decoy && !decoy.popped && Math.hypot(b.x-decoy.x,b.y-(decoy.y-APE_CY))<APE_R){ decoy.popped=true; SND.pop();
+        floaters.push({x:decoy.x,y:decoy.y-110,text:'DECOY!',t:0,col:'#fbbf24'}); boom2dust(decoy.x,decoy.y); }
       // direct hit on an ape
       if(foe.alive && Math.hypot(b.x-foe.x,b.y-(foe.y-APE_CY))<APE_R){ explode(b,b.x,b.y,foe); break; }
       if(b.t>0.25 && me.alive && Math.hypot(b.x-me.x,b.y-(me.y-APE_CY))<APE_R*0.85){ explode(b,b.x,b.y,me); break; }
@@ -829,6 +841,8 @@ function step(dt){
           b.vx*=0.9; vib(15);
           for(let k=0;k<6;k++) parts.push({x:b.x,y:b.y,vx:(Math.random()-.5)*160,vy:-Math.random()*160,l:.35,c:'#ff8fc7'});
           continue; }
+        if(b.type==='bounce'){ b.dead=true; mines.push({x:px,y:py,by:b.by,t:0,armed:false,dead:false,fuse:-1,vy:0});
+          floaters.push({x:px,y:py-40,text:'MINE',t:0,col:'#ff8fc7'}); pushLog(`P${b.by+1} bounce → mine`); break; }
         if(b.type==='mine'){ b.dead=true;
           let mx=px, my=py; // settle on the surface
           mines.push({x:mx,y:my,by:b.by,t:0,armed:false,dead:false,fuse:-1,vy:0});
@@ -868,7 +882,12 @@ function step(dt){
   for(const f of floaters){ f.t+=dt; f.y-=40*dt; }
   floaters=floaters.filter(f=>f.t<1.4);
   // the shot is over when nothing is flying any more
-  if(shotActive && !bananas.length && !roundOver && !monkey.falling && !target.falling && !chunks.length && !monkey.jump && !target.jump){ shotActive=false; nextTurn(); }
+  if(shotActive && !roundOver && atRest()){
+    if(turnThrew && !retreat){ retreat={t:3,jumped:false,done:false}; startDisguise(); buildAmmoUI(); }
+    else if(retreat && !retreat.done && !retreat.jumped){
+      if(GM==='cpu' && turn===1) applyRetreatEnd();
+      else if(Net.myTurn()){ retreat.t-=dt; if(retreat.t<=0){ Net.send({t:'rend',by:turn,n:actNo}); applyRetreatEnd(); } } }
+    else if(!collapseCracked()){ shotActive=false; nextTurn(); } }
   for(const p of parts){ p.vx*=0.98; p.vy+=600*dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.l-=dt; }
   for(const d of debris){ d.vy+=1100*dt; d.x+=d.vx*dt; d.y+=d.vy*dt; d.rot+=d.vr*dt; d.l-=dt;
     if(solidAt(d.x,d.y) && d.vy>0){ d.y-=d.vy*dt; d.vy*=-0.28; d.vx*=0.6; d.vr*=0.5; } }
@@ -887,7 +906,8 @@ function step(dt){
 let bannerT=1.2, hintT=6;
 function applyTimeout(){ actNo++; hitText='TIME!'; hitT=1; pushLog(`P${turn+1} time up`); nextTurn(); }
 function sensorsReady(){ return document.getElementById('overlay').style.display==='none' && !paused && !remotePaused; }
-function nextTurn(){ builtThisTurn=false; jumpedThisTurn=false; hintT=Math.max(hintT,0); SND.chime(); turn=1-turn; turnWait=0.7; bannerT=1.4; turnClock=S.turnTime;
+function nextTurn(){ builtThisTurn=false; jumpedThisTurn=0; retreat=null; turnThrew=false; hintT=Math.max(hintT,0); SND.chime(); turn=1-turn;
+  invis[turn]=false; if(decoy && decoy.p===turn) decoy=null;   // your disguise lasts until your next turn turnWait=0.7; bannerT=1.4; turnClock=S.turnTime;
   turnSetup(); buildAmmoUI(); burnTick(); sendSync(); }
 // what the new player's turn brings: their scope, a time squeeze or a wind trick aimed at them
 function turnSetup(){
@@ -945,7 +965,9 @@ function explode(b,x,y,direct){
 function detonateMine(m){
   if(m.dead) return; m.dead=true;
   boom(m.x,m.y,55,true);
-  blastHits(m.x,m.y,55,m.by,null,DMG.mine,null);
+  // whoever stands close enough to set it off takes the full hit
+  let near=null, nd=1e9; for(const ape of [monkey,target]){ if(!ape.alive) continue; const d=Math.hypot(ape.x-m.x,(ape.y-20)-m.y); if(d<85 && d<nd){ nd=d; near=ape; } }
+  blastHits(m.x,m.y,55,m.by,null,DMG.mine,near);
   for(const o of mines){ if(!o.dead && Math.hypot(o.x-m.x,o.y-m.y)<80) o.fuse=o.fuse>0?Math.min(o.fuse,0.25):0.25; } // chain
 }
 // damage: a direct hit takes the full amount for that banana; an ape near the blast takes a share by distance
@@ -1039,9 +1061,18 @@ function render(now){
     if(ape.falling) return {pose:'fly', f:0.5};
     return {pose:'idle'};
   };
-  if(monkey.alive) drawApe(monkey.x+(sh===monkey?jx:0), monkey.y, Object.assign({t:T,dir:1,pc:PCOL[0]},poseOf(monkey,0)));
-  if(target.alive) drawApe(target.x+(sh===target?jx:0), target.y, Object.assign({t:T,dir:-1,pc:PCOL[1]},poseOf(target,1)));
-  for(const [k,ape] of [[0,monkey],[1,target]]){ if(!ape.alive || shield[k]<=0) continue;
+  // invisible: the other player doesn't see you until their last 3 seconds; you see yourself as a ghost
+  const hidden=k=>invis[k] && !viewerIs(k) && (turn===k || turnClock>3), ghost=k=>invis[k] && viewerIs(k);
+  for(const [k,ape] of [[0,monkey],[1,target]]){ if(!ape.alive || hidden(k)) continue;
+    ctx.save(); if(ghost(k)) ctx.globalAlpha=.4;
+    drawApe(ape.x+(sh===ape?jx:0), ape.y, Object.assign({t:T,dir:k?-1:1,pc:PCOL[k]},poseOf(ape,k))); ctx.restore(); }
+  if(decoy && !decoy.popped){ const own=viewerIs(decoy.p);
+    ctx.save(); if(own) ctx.globalAlpha=.35; drawApe(decoy.x,decoy.y,{t:T,dir:decoy.p?-1:1,pc:PCOL[decoy.p],pose:'idle'}); ctx.restore();
+    if(own){ ctx.font='bold 13px system-ui'; ctx.textAlign='center'; ctx.fillStyle='rgba(251,191,36,.8)'; ctx.fillText('DECOY',decoy.x,decoy.y-110); } }
+  if(retreat && !retreat.done && !retreat.jumped && Net.myTurn() && !(GM==='cpu'&&turn===1) && sh.alive){
+    ctx.font='bold 22px system-ui'; ctx.textAlign='center'; ctx.fillStyle='#93c5fd';
+    ctx.fillText(`JUMP? ${Math.max(0,Math.ceil(retreat.t))}`,sh.x,sh.y-128); }
+  for(const [k,ape] of [[0,monkey],[1,target]]){ if(!ape.alive || shield[k]<=0 || hidden(k)) continue;
     const sd=k?-1:1, q=shield[k]/30, hit=shieldHit[k]>0;
     ctx.save(); ctx.translate(ape.x+sd*20*AK,ape.y-30*AK+(hit?(Math.random()-.5)*4:0));
     const sg=ctx.createLinearGradient(-9,0,9,0); sg.addColorStop(0,'rgba(200,220,255,.85)'); sg.addColorStop(1,'rgba(90,120,170,.85)');
@@ -1049,7 +1080,7 @@ function render(now){
     ctx.strokeStyle='rgba(20,30,50,.8)'; ctx.lineWidth=2; ctx.stroke();
     if(q<0.67){ ctx.strokeStyle='rgba(20,30,50,.8)'; ctx.lineWidth=1.2; ctx.beginPath(); ctx.moveTo(-6,-22); ctx.lineTo(1,-6); ctx.lineTo(-3,6); if(q<0.34){ ctx.moveTo(6,-26); ctx.lineTo(0,-10); ctx.lineTo(5,10); } ctx.stroke(); }
     ctx.restore(); }
-  for(const [k,ape] of [[0,monkey],[1,target]]){ if(!ape.alive) continue;
+  for(const [k,ape] of [[0,monkey],[1,target]]){ if(!ape.alive || hidden(k)) continue;
     const open=umbShow[k]>0, show=open||(umbrella[k]&&viewerIs(k)); if(!show) continue;
     ctx.save(); ctx.translate(ape.x,ape.y-APE_CY*2-18); ctx.globalAlpha=open?Math.min(1,umbShow[k]):.55;
     const R=open?46:14; ctx.fillStyle=open?'#3b82f6':'#93c5fd'; ctx.beginPath(); ctx.arc(0,0,R,Math.PI,0); ctx.fill();
@@ -1308,9 +1339,9 @@ const Net=(()=>{
   const ROOT='gorillas-amc/v2/';
   const inbox=()=>ROOT+code+(mode==='host'?'/h':'/g'), outbox=()=>ROOT+code+(mode==='host'?'/g':'/h');
   const N={
-    get mode(){return mode}, get me(){return me}, get code(){return code},
+    get mode(){return mode}, get me(){return me}, get code(){return code}, get q(){return queue},
     myTurn(){ return mode==='local' || turn===me; },
-    send(m){ if(mode==='local') return; m.id=m.id||(Date.now().toString(36)+Math.random().toString(36).slice(2,8)); const txt=JSON.stringify(m);
+    send(m){ if(mode==='local') return; m.mid=m.mid||(Date.now().toString(36)+Math.random().toString(36).slice(2,8)); const txt=JSON.stringify(m);   // mid = message id (a build's own 'id' is its name!)
       for(const c of clients){ try{ if(c.connected) c.publish(outbox(),txt,{qos:1}); }catch(e){} } if(N._fakeSend) N._fakeSend(m); },
     status(fn){ onStatus=fn; },
     pump(){
@@ -1325,16 +1356,20 @@ const Net=(()=>{
           const m=queue[qi], drop=()=>{ queue.splice(qi,1); moved=true; };
           if(m.t==='sel'){ if(m.by===turn){ selType[turn]=m.i; buildAmmoUI(); } drop(); break; }
           if(m.t==='req'){ if(mode==='host' && atRest() && (turnWait<=0||roundOver)){ matchCmd(m.what); drop(); break; } continue; }
-          if(m.t!=='throw' && m.t!=='build' && m.t!=='timeout'){ drop(); break; }
+          if(m.t!=='throw' && m.t!=='build' && m.t!=='timeout' && m.t!=='rend'){ drop(); break; }
           const n=m.n==null?actNo:m.n;
           if(n<actNo){ drop(); break; }            // already overtaken (the host's picture replaced it)
           if(n>actNo) continue;                    // an earlier action has not arrived yet
           if(m.by!==turn){                          // the guest acted out of step
             if(mode==='host'){ if(!atRest()) continue; actNo++; drop(); sendSync(); break; }   // host: skip it, send the true picture
             continue; }                             // guest: wait for the host's picture
-          if(shotActive || bananas.length || roundOver || turnWait>0 || !atRest()) continue;
+          const inRetreat=retreat && !retreat.done && !retreat.jumped;
+          const ready = m.t==='rend' ? (inRetreat && atRest())
+                      : retreat ? (m.t==='build' && inRetreat && atRest())
+                      : !(shotActive || bananas.length || roundOver || turnWait>0 || !atRest());
+          if(!ready) continue;
           let ok=true;
-          if(m.t==='throw') ok=applyThrow(m); else if(m.t==='build') ok=applyBuild(m); else applyTimeout();
+          if(m.t==='throw') ok=applyThrow(m); else if(m.t==='build') ok=applyBuild(m); else if(m.t==='rend') applyRetreatEnd(); else applyTimeout();
           if(!ok){ actNo++; if(mode==='host') sendSync(); }   // couldn't do it here: keep the numbers in step, host corrects the other phone
           drop(); break;
         }
@@ -1342,7 +1377,7 @@ const Net=(()=>{
     },
     request(what){ if(mode==='host') queue.push({t:'req',what}); else N.send({t:'req',what}); },
     recv(m){
-      if(m.id){ if(seen.has(m.id)) return; seen.add(m.id); }     // the same message arrives via both relays
+      if(m.mid){ if(seen.has(m.mid)) return; seen.add(m.mid); }  // the same message arrives via both relays
       lastHeard=Date.now();
       if(m.t==='ping') return;
       if(m.t==='pause'){ if(m.s>lastPauseSeq){ lastPauseSeq=m.s; setRemotePause(!!m.on); } return; }
@@ -1390,7 +1425,7 @@ let pendingStart=null;
 // ---------- online referee: after every turn the host sends its exact picture of the world; the guest takes it.
 // Small differences (another phone's maths, a late message) can then never pile up from match to match.
 let actNo=0, pendingSync=null;
-function atRest(){ return !bananas.length && !chunks.length && !monkey.falling && !target.falling && !monkey.jump && !target.jump && !holding; }
+function atRest(){ return !bananas.length && !chunks.length && !monkey.falling && !target.falling && !monkey.jump && !target.jump && !holding && !mines.some(m=>!m.dead&&(m.fuse>0||!m.armed)); }
 function rle(c){ const o=[]; let v=c[0]||0, n=0; for(let i=0;i<c.length;i++){ if(c[i]===v) n++; else { o.push(n); v=c[i]; n=1; } } o.push(n); return (c[0]?'1':'0')+o.map(x=>x.toString(36)).join(','); }
 function unrle(s,len){ const o=new Uint8Array(len); let v=s[0]==='1'?1:0, k=0; for(const r of s.slice(1).split(',')){ const n=parseInt(r,36); if(v) o.fill(1,k,Math.min(len,k+n)); k+=n; v^=1; } return o; }
 function snapshot(){
@@ -1398,7 +1433,9 @@ function snapshot(){
   return {t:'sync',a:actNo,r:roundNo,sc:score.slice(),tu:turn,ns:nextStarter,ap:[ap(monkey),ap(target)],
     w:wind,wt:windTrick,sn:scopeNext.slice(),tn:timeNext.slice(),um:umbrella.slice(),sh:shield.slice(),
     us:used,am:ammo,ld:ladder.slice(),st:selType.slice(),fi:fires.map(f=>({x:f.x,y:f.y,by:f.by,turns:f.turns,fresh:f.fresh,vy:0})),
-    bt:builtThisTurn?1:0,jt:jumpedThisTurn?1:0,so:scopeOn?1:0,bl:blds.map(b=>({y:b.y,ch:b.ch,c:rle(b.cells)}))};
+    bt:builtThisTurn?1:0,jt:jumpedThisTurn,so:scopeOn?1:0,bl:blds.map(b=>({y:b.y,ch:b.ch,c:rle(b.cells),u:b.unstable?1:0,k:b.cracked?1:0})),
+    mi:mines.filter(m=>!m.dead).map(m=>({x:m.x,y:m.y,by:m.by,t:m.t,armed:m.armed,dead:false,fuse:m.fuse,vy:0})),
+    iv:invis.slice(),ia:invisArm.slice(),da:decoyArm.slice(),dc:decoy?Object.assign({},decoy):null};
 }
 function sendSync(){ if(GM==='online' && Net.mode==='host' && !roundOver) Net.send(snapshot()); }
 function setBldTop(b,y){
@@ -1414,8 +1451,10 @@ function applySync(s){
   [monkey,target].forEach((a,i)=>{ const d=s.ap[i]; a.x=d.x; a.y=d.y; a.hp=d.hp; a.alive=!!d.al; a.vy=0; a.falling=false; a.jump=null; a.win=false; });
   wind=s.w; windTrick=s.wt; scopeNext=s.sn.slice(); timeNext=s.tn.slice(); umbrella=s.um.slice(); shield=s.sh.slice();
   used=s.us; ammo=s.am; ladder=s.ld.slice(); selType=s.st.slice(); fires=s.fi.map(f=>Object.assign({},f));
-  builtThisTurn=!!s.bt; jumpedThisTurn=!!s.jt; scopeOn=!!s.so; bananas=[]; chunks=[]; shotActive=false;
+  builtThisTurn=!!s.bt; jumpedThisTurn=s.jt|0; scopeOn=!!s.so; bananas=[]; chunks=[]; shotActive=false; retreat=null; turnThrew=false;
+  mines=(s.mi||[]).map(m=>Object.assign({},m)); invis=(s.iv||[false,false]).slice(); invisArm=(s.ia||[false,false]).slice(); decoyArm=(s.da||[false,false]).slice(); decoy=s.dc?Object.assign({},s.dc):null;
   blds.forEach((b,bi)=>{ const d=s.bl[bi]; if(!d) return;
+    b.unstable=!!d.u; b.cracked=!!d.k;
     setBldTop(b,d.y); if(b.ch!==d.ch) return;
     const want=unrle(d.c,b.cw*b.ch), have=b.cells; let diff=0;
     for(let k=0;k<want.length;k++){ if(want[k]===have[k]) continue; diff++;
@@ -1425,6 +1464,38 @@ function applySync(s){
   buildAmmoUI();
 }
 let syncFixes=0;
+function applyRetreatEnd(){ actNo++; if(retreat) retreat.done=true; buildAmmoUI(); }
+// DECOY / INVISIBLE start the moment your banana has landed
+function startDisguise(){
+  const p=turn, ape=p?target:monkey;
+  if(invisArm[p]){ invisArm[p]=false; invis[p]=true; if(viewerIs(p)) floaters.push({x:ape.x,y:ape.y-100,text:'INVISIBLE',t:0,col:'#c4b5fd'}); }
+  if(decoyArm[p]){ decoyArm[p]=false;
+    const r=mulberry32((baseSeed^Math.imul(actNo+1,2654435761))>>>0), cur=bldAt(ape.x), half=blds.filter(b=>(p?b.x>WW/2:b.x+b.w<WW/2) && b!==cur && b.w>60);
+    if(half.length){ const b=half[Math.floor(r()*half.length)], x=b.x+b.w/2; let y=0; while(y<WH && !solidAt(x,y+1)) y++;
+      decoy={p,x,y,popped:false}; boom2dust(x,y); boom2dust(ape.x,ape.y); } }
+}
+// unstable buildings: landing on one cracks it; at the end of the turn it loses a whole storey
+function drawCracks(b,big){
+  const g=bCtx; g.save(); g.strokeStyle=big?'rgba(10,8,8,.95)':'rgba(15,12,12,.85)'; g.lineWidth=big?2.6:2;
+  for(let k=0;k<(big?5:3);k++){ let x=b.x+8+Math.random()*(b.w-16), y=b.y+4; g.beginPath(); g.moveTo(x,y);
+    for(let i=0;i<5;i++){ x+=(Math.random()-.5)*14; y+=8+Math.random()*10; g.lineTo(x,y); } g.stroke(); }
+  g.restore();
+}
+function crackOnLanding(ape){ const b=bldAt(ape.x); if(!b || !b.unstable || b.cracked) return;
+  b.cracked=true; drawCracks(b,true); shakeT=Math.max(shakeT,0.25); shakeA=Math.max(shakeA,6); SND.thud();
+  floaters.push({x:ape.x,y:ape.y-110,text:'CRACK!',t:0,col:'#fbbf24'}); }
+function collapseCracked(){
+  let any=false;
+  for(const b of blds){ if(!b.cracked) continue; b.cracked=false; b.unstable=false;
+    const on=[monkey,target].filter(a=>a.alive && bldAt(a.x)===b);
+    let surf; if(on.length) surf=Math.min(...on.map(a=>a.y)); else { const x=b.x+b.w/2; surf=0; while(surf<WH && !solidAt(x,surf+1)) surf++; }
+    const cut=Math.round(surf+FLOOR); if(cut>WH-40) continue;
+    setCells(b,b.x,b.y,b.w,cut-b.y,0); bCtx.clearRect(b.x-1,b.y-70,b.w+2,cut-b.y+70); paintBlock(b,b.x,cut,b.w,6);
+    for(let i=0;i<4;i++) boom2dust(b.x+Math.random()*b.w,cut);
+    for(let i=0;i<14;i++) debris.push({x:b.x+Math.random()*b.w,y:cut-10,vx:(Math.random()-.5)*200,vy:-Math.random()*200,s:3+Math.random()*6,rot:0,vr:(Math.random()-.5)*10,l:1.5,c:b.col});
+    shakeT=0.45; shakeA=12; SND.boom(40); checkCollapse(b); any=true; }
+  return any;
+}
 // match commands in online play go through the host, so both phones do them at the same moment
 function matchCmd(what){
   actNo++;
@@ -1458,11 +1529,15 @@ const BUILDS=[
   {id:'up',     name:'FLOOR+',   ic:'⬆'},
   {id:'down',   name:'FLOOR−',   ic:'⬇'},
   {id:'shield', name:'SHIELD',   ic:'⛨'},
-  {id:'scope',  name:'SCOPE',    ic:'◎'},
+  {id:'decoy',  name:'DECOY',    ic:'☺', arm:true},
   {id:'umb',    name:'UMBRELLA', ic:'☂', hidden:true},
   {id:'windm',  name:'WIND',     ic:'≋', hidden:true},
-  {id:'timep',  name:'TIME',     ic:'⏱', hidden:true}];
-let used=[{},{}], builtThisTurn=false, scopeOn=false, jumpedThisTurn=false;
+  {id:'timep',  name:'TIME',     ic:'⏱', hidden:true},
+  {id:'invis',  name:'INVISIBLE',ic:'◌', hidden:true, arm:true}];
+// turn flow: up to 2 jumps before the throw; after your banana lands you get 3 s for one retreat jump.
+// DECOY / INVISIBLE are armed before the throw (once per match), don't take the turn, and start when your banana lands.
+let retreat=null, turnThrew=false, invisArm=[false,false], decoyArm=[false,false], invis=[false,false], decoy=null;
+let used=[{},{}], builtThisTurn=false, scopeOn=false, jumpedThisTurn=0;
 let shield=[0,0], shieldHit=[0,0];
 let scopeNext=[false,false], umbrella=[false,false], walls=[null,null], timeNext=[0,0], windTrick=null;
 function buildAvail(p,id){ const bd=BUILDS.find(x=>x.id===id); return bd.free || godMode || !used[p][id]; }
@@ -1521,7 +1596,8 @@ function doBuild(p,id){
     paintBlock(r.b,r.x0,r.y+FLOOR,r.x1-r.x0,6);
     ape.jump={x0:ape.x,y0:r.y,x1:ape.x,y1:r.y+FLOOR,h:30}; checkCollapse(r.b); if(hadWall) placeWall(p); return true; }
   if(id==='shield'){ shield[p]=30; floaters.push({x:ape.x,y:ape.y-95,text:'SHIELD UP',t:0,col:'#93c5fd'}); return true; }
-  if(id==='scope'){ scopeNext[p]=true; if(me) floaters.push({x:ape.x,y:ape.y-95,text:'SCOPE NEXT TURN',t:0,col:'#93c5fd'}); return true; }
+  if(id==='decoy'){ decoyArm[p]=true; if(me) floaters.push({x:ape.x,y:ape.y-95,text:'DECOY READY',t:0,col:'#93c5fd'}); return true; }
+  if(id==='invis'){ invisArm[p]=true; if(me) floaters.push({x:ape.x,y:ape.y-95,text:'INVISIBLE READY',t:0,col:'#c4b5fd'}); return true; }
   if(id==='umb'){ umbrella[p]=true; if(me) floaters.push({x:ape.x,y:ape.y-95,text:'UMBRELLA READY',t:0,col:'#93c5fd'}); return true; }
   if(id==='windm'){ const real=Math.abs(wind)>25? Math.max(-150,Math.min(150,-wind*1.3)) : (wind>=0?1:-1)*90;
     windTrick={victim:1-p, shown:wind, real, base:wind, active:false}; if(me) floaters.push({x:ape.x,y:ape.y-95,text:'WIND TRICK SET',t:0,col:'#93c5fd'}); return true; }
@@ -1530,12 +1606,15 @@ function doBuild(p,id){
 }
 function applyBuild(m){
   const bd=BUILDS.find(x=>x.id===m.id); if(!bd) return false;
-  if(m.by!==turn || shotActive || bananas.length || roundOver || builtThisTurn || !buildAvail(m.by,m.id)) return false;
-  if(bd.free && jumpedThisTurn) return false;
+  if(m.by!==turn || roundOver || bananas.length || !buildAvail(m.by,m.id)) return false;
+  if(retreat){ if(!bd.free || retreat.jumped || retreat.done) return false; }      // after the throw: only the retreat jump
+  else { if(shotActive) return false;
+    if(bd.free){ if(jumpedThisTurn>=2) return false; } else if(builtThisTurn) return false; }
   if(!doBuild(m.by,m.id)){ if(viewerIs(m.by)) floaters.push({x:(m.by?target:monkey).x,y:(m.by?target:monkey).y-95,text:"CAN'T",t:0,col:'#aaa'}); return false; }
   actNo++;
-  if(bd.free) jumpedThisTurn=true;
-  else { used[m.by][m.id]=true; builtThisTurn=true; shotActive=true; shotT=0; }   // a full action takes the turn: it ends like a shot
+  if(retreat) retreat.jumped=true;
+  else if(bd.free) jumpedThisTurn++;
+  else { used[m.by][m.id]=true; builtThisTurn=true; if(!bd.arm){ shotActive=true; shotT=0; } }   // a full action takes the turn: it ends like a shot
   if(viewerIs(m.by)) SND.pickup(); buildAmmoUI();
   return true;
 }
@@ -1553,7 +1632,7 @@ function stepJumps(dt){
       if(!j.took){ j.took=true; SND.stretchStart(); for(let k=0;k<4;k++) dust.push({x:j.x0+(Math.random()-.5)*20,y:j.y0-3,vx:(Math.random()-.5)*40,vy:-10,r0:6,l:.6,L:.8}); }
       continue; }
     ape.x=j.x1; ape.y=j.y1;
-    if(!j.landed){ j.landed=true; j.le=0; boom2dust(ape.x,ape.y); SND.thud(); }
+    if(!j.landed){ j.landed=true; j.le=0; boom2dust(ape.x,ape.y); SND.thud(); crackOnLanding(ape); }
     j.phase='land'; j.le+=dt;
     if(j.le>=J_LAND){ ape.jump=null; } }
 }
@@ -1643,11 +1722,10 @@ function buildBuildUI(){
   if(!buildsEl) return; buildsEl.innerHTML='';
   BUILDS.forEach(bd=>{
     const who=GM==='online'?Net.me:(GM==='cpu'?0:turn), bt=document.createElement('button'), av=buildAvail(who,bd.id);
-    bt.className=(!av?'used ':'')+((bd.free?jumpedThisTurn:builtThisTurn)&&who===turn?'done ':'')+(bd.free?'free ':'')+(bd.hidden?'hid':'');
+    bt.className=(!av?'used ':'')+((bd.free?(retreat?(retreat.jumped||retreat.done):jumpedThisTurn>=2):builtThisTurn)&&who===turn?'done ':'')+(bd.free?'free ':'')+(bd.hidden?'hid':'');
     bt.innerHTML=`<span>${bd.ic}</span>${bd.name}`;
     bt.addEventListener('pointerdown',e=>{ e.preventDefault(); e.stopPropagation();
-      if(!Net.myTurn() || holding || builtThisTurn || shotActive || !buildAvail(turn,bd.id) || (GM==='cpu'&&turn===1)) return;
-      if(remotePaused) return;
+      if(!Net.myTurn() || holding || remotePaused || (GM==='cpu'&&turn===1)) return;
       const m={t:'build',by:turn,id:bd.id,n:actNo}; if(applyBuild(m)) Net.send(m); });
     buildsEl.appendChild(bt);
   });
@@ -1819,7 +1897,7 @@ resize(); newTrack(baseSeed); placeBtn(); requestAnimationFrame(loop);
 if('serviceWorker' in navigator && location.protocol==='https:'){ navigator.serviceWorker.register('sw.js').catch(()=>{});
   let reloaded=false; navigator.serviceWorker.addEventListener('controllerchange',()=>{ if(!reloaded){ reloaded=true; location.reload(); } }); }
 // expose for testing
-window.__amc={applyBuildT:(m)=>applyBuild(m), get used(){return used}, get ladder(){return ladder}, setGod(v){godMode=v;}, cpuTest:(n,lvl)=>{const L0=cpuLevel;cpuLevel=lvl;let dmg=0,direct=0;for(let i=0;i<n;i++){newTrack(1000+i);cpu.shots=0;const pl=cpuPlan(),f=handOf(target,-1),r=cpuSim(f.x,f.y,pl.msg.vx,pl.msg.vy,wind,monkey.x,monkey.y-APE_CY);if(r.d<66)dmg++;if(r.d===0)direct++;}cpuLevel=L0;return {dmg,direct,n};},startLocal:(m,n)=>startLocal(m,n),get gm(){return GM}, get names(){return names}, get cpuLevel(){return cpuLevel}, applyThrowForTest:(m)=>applyThrow(m),net:Net,startOnline,snapshot,applySync,get syncFixes(){return syncFixes},get actNo(){return actNo},addCraterT:(x,y,r)=>addCrater(x,y,r),get remotePaused(){return remotePaused},get state(){return {turn,score,hp:[monkey.hp,target.hp],m:[monkey.x,monkey.y],t:[target.x,target.y],roundNo,shotActive,nb:bananas.length,cells:blds.reduce((a,b)=>a+b.cells.reduce((x,y)=>x+y,0),0)}},dbg:{theme(i){theme=THEMES[i];bgCache=null;drawBuildings();initClouds();},noWind(){wind=0;windNow=0;S.wind=false;},crater(x,y,r){addCrater(x,y,r);},aimAt(){const sh=shooter(),fo=victim();return {sx:sh.x,sy:sh.y,fx:fo.x,fy:fo.y};},fire(vx,vy,type){const hp=handOf(shooter(),side());bananas=[{x:hp.x,y:hp.y,vx,vy,rot:0,t:0,by:turn,type:type||'std',n:0,shot:{t:0,a:0}}];shotActive=true;shooter().throwT=performance.now();}},get turn(){return turn}, get score(){return score}, S,g,get ref(){return ref},set ref(v){ref=v},startHold,endHold,get banana(){return bananas[0]||null}, get hp(){return [monkey.hp,target.hp]}, get ys(){return [monkey.y,target.y,monkey.falling,target.falling]}, get mines(){return mines}, get fires(){return fires}, award(p){awardSpecial(p)}, get ammo(){return ammo},pull,setSensor(){hasSensor=true}};
+window.__amc={applyBuildT:(m)=>applyBuild(m), get used(){return used}, get ladder(){return ladder}, setGod(v){godMode=v;}, cpuTest:(n,lvl)=>{const L0=cpuLevel;cpuLevel=lvl;let dmg=0,direct=0;for(let i=0;i<n;i++){newTrack(1000+i);cpu.shots=0;const pl=cpuPlan(),f=handOf(target,-1),r=cpuSim(f.x,f.y,pl.msg.vx,pl.msg.vy,wind,monkey.x,monkey.y-APE_CY);if(r.d<66)dmg++;if(r.d===0)direct++;}cpuLevel=L0;return {dmg,direct,n};},startLocal:(m,n)=>startLocal(m,n),get gm(){return GM}, get names(){return names}, get cpuLevel(){return cpuLevel}, applyThrowForTest:(m)=>applyThrow(m),net:Net,startOnline,snapshot,applySync,get retreat(){return retreat},get mineList(){return mines},get blds(){return blds},get decoy(){return decoy},get invis(){return invis},get shieldV(){return shield},get syncFixes(){return syncFixes},get actNo(){return actNo},addCraterT:(x,y,r)=>addCrater(x,y,r),get remotePaused(){return remotePaused},get state(){return {turn,score,hp:[monkey.hp,target.hp],m:[monkey.x,monkey.y],t:[target.x,target.y],roundNo,shotActive,nb:bananas.length,cells:blds.reduce((a,b)=>a+b.cells.reduce((x,y)=>x+y,0),0)}},dbg:{theme(i){theme=THEMES[i];bgCache=null;drawBuildings();initClouds();},noWind(){wind=0;windNow=0;S.wind=false;},crater(x,y,r){addCrater(x,y,r);},aimAt(){const sh=shooter(),fo=victim();return {sx:sh.x,sy:sh.y,fx:fo.x,fy:fo.y};},spawn(x,y,vx,vy,type,by){bananas.push({x,y,vx,vy,rot:0,t:0.3,by,type:type||'std',n:0,shot:{t:0,a:0}});shotActive=true;},setShield(k,v){shield[k]=v;},get floaters(){return floaters.map(f=>f.text)},fire(vx,vy,type){const hp=handOf(shooter(),side());bananas=[{x:hp.x,y:hp.y,vx,vy,rot:0,t:0,by:turn,type:type||'std',n:0,shot:{t:0,a:0}}];shotActive=true;shooter().throwT=performance.now();}},get turn(){return turn}, get score(){return score}, S,g,get ref(){return ref},set ref(v){ref=v},startHold,endHold,get banana(){return bananas[0]||null}, get hp(){return [monkey.hp,target.hp]}, get ys(){return [monkey.y,target.y,monkey.falling,target.falling]}, get mines(){return mines}, get fires(){return fires}, award(p){awardSpecial(p)}, get ammo(){return ammo},pull,setSensor(){hasSensor=true}};
 </script>
 </body>
 </html>
