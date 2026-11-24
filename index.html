@@ -187,7 +187,7 @@
     <p id="joinStatus"></p>
     <button class="btn ghost" id="bBack2">BACK</button>
   </div>
-  <p style="font-size:11px;opacity:.45;margin-top:10px">build 26</p>
+  <p style="font-size:11px;opacity:.45;margin-top:10px">build 27</p>
 </div>
 <div id="rpause" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(8,10,20,.6);z-index:7;color:#ffd166;font:700 26px system-ui;pointer-events:none;text-shadow:0 2px 8px #000"><span>paused</span></div>
 <div id="rotate">↻ Turn the phone to landscape</div>
@@ -907,7 +907,8 @@ let bannerT=1.2, hintT=6;
 function applyTimeout(){ actNo++; hitText='TIME!'; hitT=1; pushLog(`P${turn+1} time up`); nextTurn(); }
 function sensorsReady(){ return document.getElementById('overlay').style.display==='none' && !paused && !remotePaused; }
 function nextTurn(){ builtThisTurn=false; jumpedThisTurn=0; retreat=null; turnThrew=false; hintT=Math.max(hintT,0); SND.chime(); turn=1-turn;
-  invis[turn]=false; if(decoy && decoy.p===turn) decoy=null;   // your disguise lasts until your next turn turnWait=0.7; bannerT=1.4; turnClock=S.turnTime;
+  invis[turn]=false; if(decoy && decoy.p===turn) decoy=null;   // your disguise lasts until your next turn
+  turnWait=0.7; bannerT=1.4; turnClock=S.turnTime;
   turnSetup(); buildAmmoUI(); burnTick(); sendSync(); }
 // what the new player's turn brings: their scope, a time squeeze or a wind trick aimed at them
 function turnSetup(){
