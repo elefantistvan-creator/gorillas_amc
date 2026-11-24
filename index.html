@@ -158,7 +158,7 @@
       <p>The harder and longer you pull, the more your hand trembles. You have 10 seconds per turn.</p>
       <p><b>Bananas</b> (bottom): <b>Banana</b> plain · <b>Drill</b> bores through buildings · <b>Split</b> splits into three at the top · <b>Bounce</b> bounces three times, then stays there as a mine that hurts anyone who comes close · <b>Fire</b> leaves flames that burn for 2 turns · <b>Atom</b> huge blast. Special bananas are earned every time your banana damages the opponent (a hit or a near hit), always in this order: Bounce → Split → Drill → Fire → Atom, then again from the start. They last for the whole match.</p>
       <p><b>Jump</b> ◀ ▶ (green): up to 2 hops before you throw, and 1 retreat hop in the 3 seconds after your banana lands — every turn. Roofs with a <b>cracked top storey</b> are unstable (new ones keep appearing): land on one and it loses a whole storey at the end of the turn, with you on it if you don't hop away.</p>
-      <p><b>Builds</b> (row above the bananas) take your whole turn and work once per match: <b>Floor+</b> / <b>Floor−</b> raise or lower the whole roof you stand on · <b>Shield</b> held in your hand: a banana that would hit you flies back flat toward the thrower (then the shield is gone); otherwise it soaks 30% blast damage (the drill goes through) · <b>Decoy</b> armed before your throw, doesn't take the turn: when your banana lands a fake gorilla appears on another roof on your side, until your next turn.</p>
+      <p><b>Builds</b> (left column) take your whole turn and work once per round (they refill when a new round starts): <b>Floor+</b> / <b>Floor−</b> raise or lower the whole roof you stand on · <b>Shield</b> held in your hand: a banana that would hit you flies back flat toward the thrower (then the shield is gone); otherwise it soaks 30% blast damage (the drill goes through) · <b>Decoy</b> armed before your throw, doesn't take the turn: when your banana lands a fake gorilla appears on another roof on your side, until your next turn.</p>
       <p><b>Hidden tricks</b> (purple), your opponent doesn't see them: <b>Umbrella</b> catches the next banana (not the drill) · <b>Wind</b> twists the wind for their next throw, while their arrow still shows the old one · <b>Time</b> they get only 4 seconds next turn · <b>Invisible</b> armed before your throw, doesn't take the turn: when your banana lands you vanish, and they only see you in their last 3 seconds.</p>
       <p><b>God mode</b> (both players agree): everything unlimited.</p>
       <p><b>Damage:</b> direct hits, near misses, fire, falling. Buildings crumble — shoot the floor away and the gorilla falls.</p>
@@ -187,7 +187,7 @@
     <p id="joinStatus"></p>
     <button class="btn ghost" id="bBack2">BACK</button>
   </div>
-  <p style="font-size:11px;opacity:.45;margin-top:10px">build 28</p>
+  <p style="font-size:11px;opacity:.45;margin-top:10px">build 29</p>
 </div>
 <div id="rpause" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(8,10,20,.6);z-index:7;color:#ffd166;font:700 26px system-ui;pointer-events:none;text-shadow:0 2px 8px #000"><span>paused</span></div>
 <div id="rotate">↻ Turn the phone to landscape</div>
@@ -342,6 +342,7 @@ function newTrack(seed){
   drawBuildings(); for(const a of [monkey,target]){ let yy=0; while(yy<WH && !solidAt(a.x,yy+1)) yy++; a.y=yy; }
   blds.forEach((b,i)=>{ b.unstable = i>=2 && i<=blds.length-3 && grng()<0.15; b.cracked=false; if(b.unstable) drawCracks(b,false); });
   initClouds(); bananas=[]; mines=[]; fires=[]; chunks=[]; shotActive=false; turnClock=S.turnTime; gustT=0; parts=[]; trail=[]; debris=[]; dust=[]; corpses=[];
+  used=[{},{}];   // the extras refill every round (special bananas still last the whole match)
   selType=[0,0]; builtThisTurn=false; scopeOn=false; jumpedThisTurn=0; retreat=null; turnThrew=false; invisArm=[false,false]; decoyArm=[false,false]; invis=[false,false]; decoy=null; umbrella=[false,false]; walls=[null,null]; shield=[0,0]; scopeNext=[false,false]; timeNext=[0,0]; windTrick=null;
   if(typeof cpu!=='undefined'){ cpu.state='idle'; cpu.plan=null; cpu.shots=0; }
 }
