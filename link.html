@@ -158,7 +158,7 @@ function screenMsg(m){
   if(!st.linked){ st.linked=true; show('screen'); resize(); }
   if(m.t==='pr'){ st.rtt=performance.now()-m.s; (st.rtts=st.rtts||[]).push(st.rtt); if(st.rtts.length>10) st.rtts.shift(); return; }
   if(m.t==='zero'){ st.R0=null; return; }
-  if(m.t==='hit'){ st.hits.push({v:m.v,t:performance.now()}); if(st.hits.length>8) st.hits.shift(); flashHit(m.v); return; }
+  if(m.t==='hit'){ if(m.id<=(st.lastHit||0)) return; st.lastHit=m.id; st.hits.push({v:m.v,t:performance.now()}); if(st.hits.length>8) st.hits.shift(); flashHit(m.v); return; }
   if(m.t==='o'){
     if(m.s<=st.lastSeq && st.lastSeq-m.s<1000) return;   // the same packet arrives through both relays: first one wins
     st.lastSeq=m.s;
@@ -191,7 +191,7 @@ function draw(){
   for(let i=1;i<st.trail.length;i++){ const a=st.trail[i-1], b=st.trail[i]; cx.strokeStyle='rgba(120,170,255,'+(i/st.trail.length*0.5)+')'; cx.beginPath(); cx.moveTo(a[0],a[1]); cx.lineTo(b[0],b[1]); cx.stroke(); }
   // which side faces the screen: normal z of the blade
   const n=Rrel?apply(Rrel,[0,0,1]):[0,0,1];
-  const front=n[2]<0;   // phone screen faces the player = rubber facing the laptop
+  const front=n[2]>0;   // phone screen faces the player = rubber facing the laptop
   const poly=(pts,fill)=>{ cx.beginPath(); pts.forEach((p,i)=>{ const q=proj(p); i?cx.lineTo(q[0],q[1]):cx.moveTo(q[0],q[1]); }); cx.closePath(); cx.fillStyle=fill; cx.fill(); };
   poly(HANDLE,'#c8a070');
   poly(BLADE, front?'#d83a3a':'#222');
@@ -205,6 +205,7 @@ function draw(){
   const stale=now-st.lastHeard>2000;
   $('hud').textContent=
     (stale?'⚠ NO DATA ('+((now-st.lastHeard)/1000).toFixed(1)+' s)\n':'')+
+    'build     3\n'+
     'code      '+code+'\n'+
     'path      '+(path==='direct'?'DIRECT'+(pathKind==='host'?' (local network)':pathKind?' ('+pathKind+', via internet)':''):'relay (public server)')+'\n'+
     'packets   '+st.rate.toFixed(0)+' /s\n'+
@@ -216,7 +217,7 @@ function draw(){
 }
 
 // ================= PHONE =================
-let ph={ori:null,seq:0,lastSend:0,rot:0,acc:0,peak:0,peakT:0,lastHit:0,linked:false};
+let ph={hitId:0,ori:null,seq:0,lastSend:0,rot:0,acc:0,peak:0,peakT:0,lastHit:0,linked:false};
 function startPhone(pre){
   role='phone'; show('join');
   if(pre) $('codeIn').value=pre;
@@ -237,7 +238,7 @@ async function joinPhone(){
   connect(()=>{ const hi=()=>{ if(!ph.linked) send({t:'hello'},1); }; hi(); const iv=setInterval(()=>{ ph.linked?clearInterval(iv):hi(); },1200);
                 setTimeout(()=>{ if(!ph.linked) $('jStatus').textContent='No screen with this code.'; },12000); },
           ()=>{ $('jStatus').textContent='No connection to the relay.'; });
-  setInterval(tick,16);
+  setInterval(tick,8);
 }
 function onMotion(e){
   const r=e.rotationRate; if(r){ ph.rot=Math.hypot(r.alpha||0,r.beta||0,r.gamma||0); }
@@ -245,13 +246,13 @@ function onMotion(e){
   // swing = spin rises over 400 °/s, then falls back: report its peak once
   const now=performance.now();
   if(ph.rot>400){ if(ph.rot>ph.peak){ ph.peak=ph.rot; ph.peakT=now; } }
-  else if(ph.peak && now-ph.lastHit>350){ send({t:'hit',v:ph.peak},1); ph.lastHit=now; ph.peak=0; if(navigator.vibrate) navigator.vibrate(30); }
+  else if(ph.peak && now-ph.lastHit>350){ send({t:'hit',v:ph.peak,id:++ph.hitId},1); ph.lastHit=now; ph.peak=0; if(navigator.vibrate) navigator.vibrate(30); }
   else ph.peak=0;
 }
 function tick(){
   if(!ph.linked || !ph.ori) return;
   const now=performance.now(); if(now-ph.lastSend<33) return;    // ~30 packets per second
-  ph.lastSend=now;
+  ph.lastSend=Math.max(ph.lastSend+33,now-33);
   send({t:'o',s:ph.seq++,a:+ph.ori.a.toFixed(1),b:+ph.ori.b.toFixed(1),g:+ph.ori.g.toFixed(1),r:Math.round(ph.rot),ac:+ph.acc.toFixed(1)});
   $('cInfo').textContent='spin '+Math.round(ph.rot)+' °/s · sent '+ph.seq;
 }
