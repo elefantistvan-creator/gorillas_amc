@@ -82,7 +82,7 @@ function inbox(){ return ROOT+code+(role==='screen'?'/s':'/c'); }
 function outbox(){ return ROOT+code+(role==='screen'?'/c':'/s'); }
 let pc=null, dc=null, path='relay';
 function send(m,qos){ const t=JSON.stringify(m);
-  if(dc && dc.readyState==='open' && m.t!=='sdp' && m.t!=='ice'){ try{ dc.send(t); return; }catch(e){} }
+  if(dc && dc.readyState==='open' && m.t!=='sdp' && m.t!=='ice'){ try{ dc.send(t); if(!qos) return; }catch(e){} }
   relaySend(t,qos); }
 function relaySend(t,qos){ for(const c of clients){ try{ if(c.connected) c.publish(outbox(),t,{qos:qos||0}); }catch(e){} } }
 function connect(onReady,onErr){
@@ -168,6 +168,7 @@ function screenMsg(m){
   if(m.t==='x'){   // full 3D pose from the phone's AR tracking (metres + quaternion)
     if(m.s<=st.lastSeq && st.lastSeq-m.s<1000) return; st.lastSeq=m.s;
     const now=performance.now(); if(st.lastArr){ st.gaps.push(now-st.lastArr); if(st.gaps.length>60) st.gaps.shift(); } st.lastArr=now; st.msgs++;
+    if(!st.mode3d){ st.R0=null; st.P0=null; }
     st.mode3d=true; st.R=quatMat(m.q); st.P=m.p; if(!st.R0){ st.R0=st.R; st.P0=st.P; }
     st.rot=m.r||0; st.acc=m.ac||0; st.track=m.tr; return; }
   if(m.t==='hit'){ if(m.id<=(st.lastHit||0)) return; st.lastHit=m.id; st.hits.push({v:m.v,t:performance.now()}); if(st.hits.length>8) st.hits.shift(); flashHit(m.v); return; }
@@ -229,7 +230,7 @@ function draw(){
   const stale=now-st.lastHeard>2000;
   $('hud').textContent=
     (stale?'⚠ NO DATA ('+((now-st.lastHeard)/1000).toFixed(1)+' s)\n':'')+
-    'build     5\n'+
+    'build     6\n'+
     'code      '+code+'\n'+
     'path      '+(path==='direct'?'DIRECT'+(pathKind==='host'?' (local network)':pathKind?' ('+pathKind+', via internet)':''):'relay (public server)')+'\n'+
     'packets   '+st.rate.toFixed(0)+' /s\n'+
