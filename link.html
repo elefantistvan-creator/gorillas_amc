@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Phone Link Test</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:#0b1020;color:#e8ecf5;font:15px/1.4 system-ui,sans-serif;overflow:hidden}
+  .wrap{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:16px;text-align:center}
+  h1{font-size:22px;letter-spacing:.5px}
+  button{font:inherit;font-size:18px;padding:14px 22px;border:0;border-radius:12px;background:#2f6bff;color:#fff;min-width:220px}
+  button.alt{background:#2a3350}
+  input{font:inherit;font-size:28px;letter-spacing:8px;text-align:center;width:200px;padding:10px;border-radius:12px;border:2px solid #2a3350;background:#121a30;color:#fff;text-transform:uppercase}
+  .muted{color:#8b95b0;font-size:13px}
+  .code{font-size:56px;font-weight:700;letter-spacing:12px}
+  #qr canvas,#qr img{background:#fff;padding:8px;border-radius:8px}
+  .hidden{display:none!important}
+  #screen{position:fixed;inset:0}
+  #cv{position:absolute;inset:0;width:100%;height:100%}
+  #hud{position:absolute;left:12px;top:10px;font:13px/1.5 ui-monospace,monospace;color:#9fb0d8;text-align:left;pointer-events:none;white-space:pre}
+  #hitTxt{position:absolute;left:0;right:0;top:12%;text-align:center;font-size:64px;font-weight:800;opacity:0;transition:opacity .5s;pointer-events:none}
+  #ctrl .big{font-size:48px;font-weight:800}
+  #pad{width:100%;flex:1;border-radius:18px;background:#121a30;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;user-select:none}
+</style>
+</head>
+<body>
+
+<!-- role pick -->
+<div id="pick" class="wrap">
+  <h1>Phone ⇄ Screen link test</h1>
+  <button id="bScreen">This is the SCREEN</button>
+  <button id="bPhone" class="alt">This is the PHONE</button>
+  <p class="muted">Open this page on the laptop/TV first, then on the phone.</p>
+</div>
+
+<!-- screen: waiting -->
+<div id="wait" class="wrap hidden">
+  <p class="muted">Code</p>
+  <div class="code" id="codeTxt">····</div>
+  <div id="qr"></div>
+  <p class="muted" id="urlTxt"></p>
+  <p id="sStatus" class="muted">Connecting to relay…</p>
+</div>
+
+<!-- screen: live -->
+<div id="screen" class="hidden">
+  <canvas id="cv"></canvas>
+  <div id="hud"></div>
+  <div id="hitTxt">HIT</div>
+</div>
+
+<!-- phone: join -->
+<div id="join" class="wrap hidden">
+  <h1>Enter the code</h1>
+  <input id="codeIn" maxlength="4" autocomplete="off">
+  <button id="bJoin">Connect</button>
+  <p id="jStatus" class="muted"></p>
+</div>
+
+<!-- phone: controller -->
+<div id="ctrl" class="wrap hidden">
+  <div id="pad">
+    <div class="big" id="cState">LINKED</div>
+    <div class="muted" id="cInfo">Hold the phone like a bat, screen facing you.</div>
+  </div>
+  <button id="bZero">Zero (hold still, tap)</button>
+</div>
+
+<script>
+// ---------- relay: same public MQTT brokers as the Gorillas game ----------
+const BROKERS=['wss://broker.emqx.io:8084/mqtt','wss://broker.hivemq.com:8884/mqtt'];
+const ROOT='phone-link/v1/';
+let role='', code='', clients=[], onMsg=()=>{};
+const $=id=>document.getElementById(id);
+const show=id=>{ for(const s of ['pick','wait','screen','join','ctrl']) $(s).classList.toggle('hidden',s!==id); };
+function loadScript(src,cb,err){ const s=document.createElement('script'); s.src=src; s.onload=cb; s.onerror=err; document.head.appendChild(s); }
+function inbox(){ return ROOT+code+(role==='screen'?'/s':'/c'); }
+function outbox(){ return ROOT+code+(role==='screen'?'/c':'/s'); }
+function send(m,qos){ const t=JSON.stringify(m); for(const c of clients){ try{ if(c.connected) c.publish(outbox(),t,{qos:qos||0}); }catch(e){} } }
+function connect(onReady,onErr){
+  const go=()=>{ let ready=false, failed=0;
+    for(const url of BROKERS){
+      let c; try{ c=mqtt.connect(url,{clientId:'pl_'+Math.random().toString(36).slice(2,10),clean:true,reconnectPeriod:3000,connectTimeout:8000}); }catch(e){ failed++; continue; }
+      clients.push(c);
+      c.on('connect',()=>{ c.subscribe(inbox(),{qos:0}); if(!ready){ ready=true; onReady(); } });
+      c.on('message',(tp,p)=>{ try{ onMsg(JSON.parse(p.toString())); }catch(e){} });
+      c.on('error',()=>{ if(++failed>=BROKERS.length && !ready) onErr(); });
+    } };
+  if(window.mqtt) go(); else loadScript('https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js',go,onErr);
+}
+
+// ---------- rotation maths (W3C: R = Rz(alpha)·Rx(beta)·Ry(gamma), device -> world) ----------
+function rotMat(a,b,g){
+  const d=Math.PI/180, ca=Math.cos(a*d), sa=Math.sin(a*d), cb=Math.cos(b*d), sb=Math.sin(b*d), cg=Math.cos(g*d), sg=Math.sin(g*d);
+  return [ca*cg-sa*sb*sg, -cb*sa, ca*sg+cg*sa*sb,
+          cg*sa+ca*sb*sg,  ca*cb, sa*sg-ca*cg*sb,
+          -cb*sg,          sb,    cb*cg];
+}
+function mulTA(A,B){ const R=new Array(9); for(let i=0;i<3;i++)for(let j=0;j<3;j++){ R[i*3+j]=A[i]*B[j]+A[3+i]*B[3+j]+A[6+i]*B[6+j]; } return R; } // A^T·B
+function apply(R,p){ return [R[0]*p[0]+R[1]*p[1]+R[2]*p[2], R[3]*p[0]+R[4]*p[1]+R[5]*p[2], R[6]*p[0]+R[7]*p[1]+R[8]*p[2]]; }
+
+// ================= SCREEN =================
+let st={R:null,R0:null,lastSeq:-1,rot:0,acc:0,msgs:0,rate:0,rateT:0,gaps:[],lastArr:0,rtt:null,linked:false,lastHeard:0,hits:[],trail:[]};
+function startScreen(){
+  role='screen';
+  code=Array.from({length:4},()=>'ABCDEFGHJKMNPQRSTUVWXYZ'[Math.floor(Math.random()*23)]).join('');
+  $('codeTxt').textContent=code;
+  const url=location.origin+location.pathname+'?c='+code;
+  $('urlTxt').textContent=url;
+  loadScript('https://unpkg.com/qrcode-generator@1.4.4/qrcode.js',()=>{ try{ const q=qrcode(0,'M'); q.addData(url); q.make(); $('qr').innerHTML=q.createImgTag(6,0); }catch(e){} },()=>{});
+  show('wait');
+  onMsg=screenMsg;
+  connect(()=>{ $('sStatus').textContent='Waiting for the phone…'; },()=>{ $('sStatus').textContent='No connection to the relay.'; });
+  setInterval(()=>{ if(st.linked) send({t:'pq',s:performance.now()}); },1000);   // round-trip probe
+  requestAnimationFrame(draw);
+}
+function screenMsg(m){
+  st.lastHeard=performance.now();
+  if(m.t==='hello'){ st.linked=true; send({t:'ok'},1); show('screen'); resize(); return; }
+  if(!st.linked){ st.linked=true; show('screen'); resize(); }
+  if(m.t==='pr'){ st.rtt=performance.now()-m.s; return; }
+  if(m.t==='zero'){ st.R0=null; return; }
+  if(m.t==='hit'){ st.hits.push({v:m.v,t:performance.now()}); if(st.hits.length>8) st.hits.shift(); flashHit(m.v); return; }
+  if(m.t==='o'){
+    if(m.s<=st.lastSeq && st.lastSeq-m.s<1000) return;   // the same packet arrives through both relays: first one wins
+    st.lastSeq=m.s;
+    const now=performance.now(); if(st.lastArr) { st.gaps.push(now-st.lastArr); if(st.gaps.length>60) st.gaps.shift(); } st.lastArr=now;
+    st.msgs++;
+    st.R=rotMat(m.a,m.b,m.g); if(!st.R0) st.R0=st.R;
+    st.rot=m.r; st.acc=m.ac;
+  }
+}
+function flashHit(v){ const h=$('hitTxt'); h.textContent='HIT '+Math.round(v)+'°/s'; h.style.transition='none'; h.style.opacity=1; requestAnimationFrame(()=>{ h.style.transition='opacity .8s'; h.style.opacity=0; }); }
+const cv=$('cv'), cx=cv.getContext('2d'); let W=0,H=0,DPR=1;
+function resize(){ DPR=window.devicePixelRatio||1; W=cv.clientWidth; H=cv.clientHeight; cv.width=W*DPR; cv.height=H*DPR; cx.setTransform(DPR,0,0,DPR,0,0); }
+window.addEventListener('resize',resize);
+// bat model in the phone's own frame (x right, y toward the phone's top, z out of its screen), units ~cm
+const BLADE=[]; for(let i=0;i<32;i++){ const a=i/32*Math.PI*2; BLADE.push([Math.cos(a)*8, 9+Math.sin(a)*8.5, 0]); }
+const HANDLE=[[-1.4,0.8,0],[1.4,0.8,0],[1.4,-9,0],[-1.4,-9,0]];
+function draw(){
+  requestAnimationFrame(draw);
+  if(!st.linked) return;
+  const now=performance.now();
+  if(now-st.rateT>1000){ st.rate=st.msgs*1000/(now-st.rateT||1); st.msgs=0; st.rateT=now; }
+  cx.fillStyle='#0b1020'; cx.fillRect(0,0,W,H);
+  const S=Math.min(W,H)/40, ox=W/2, oy=H*0.55;
+  // trail of the blade centre
+  let Rrel=null;
+  if(st.R && st.R0){ Rrel=mulTA(st.R0,st.R); }
+  const proj=p=>{ const q=Rrel?apply(Rrel,p):p; const k=1/(1-q[2]/60); return [ox+q[0]*S*k, oy-q[1]*S*k, q[2]]; };
+  const c=proj([0,9,0]); st.trail.push([c[0],c[1],now]); while(st.trail.length && now-st.trail[0][2]>350) st.trail.shift();
+  cx.lineWidth=6; cx.lineCap='round';
+  for(let i=1;i<st.trail.length;i++){ const a=st.trail[i-1], b=st.trail[i]; cx.strokeStyle='rgba(120,170,255,'+(i/st.trail.length*0.5)+')'; cx.beginPath(); cx.moveTo(a[0],a[1]); cx.lineTo(b[0],b[1]); cx.stroke(); }
+  // which side faces the screen: normal z of the blade
+  const n=Rrel?apply(Rrel,[0,0,1]):[0,0,1];
+  const front=n[2]<0;   // phone screen faces the player = rubber facing the laptop
+  const poly=(pts,fill)=>{ cx.beginPath(); pts.forEach((p,i)=>{ const q=proj(p); i?cx.lineTo(q[0],q[1]):cx.moveTo(q[0],q[1]); }); cx.closePath(); cx.fillStyle=fill; cx.fill(); };
+  poly(HANDLE,'#c8a070');
+  poly(BLADE, front?'#d83a3a':'#222');
+  cx.strokeStyle='#e6d3b0'; cx.lineWidth=2; cx.beginPath(); BLADE.forEach((p,i)=>{ const q=proj(p); i?cx.lineTo(q[0],q[1]):cx.moveTo(q[0],q[1]); }); cx.closePath(); cx.stroke();
+  // speed bar
+  const sp=Math.min(1,st.rot/1500);
+  cx.fillStyle='#1c2440'; cx.fillRect(W-40,H*0.15,20,H*0.7);
+  cx.fillStyle=sp>0.6?'#ff5a3a':sp>0.3?'#ffc23a':'#3ad17a'; cx.fillRect(W-40,H*0.85-H*0.7*sp,20,H*0.7*sp);
+  // hud
+  const g=st.gaps.slice().sort((a,b)=>a-b), med=g.length?g[g.length>>1]:0, p95=g.length?g[Math.floor(g.length*0.95)]:0;
+  const stale=now-st.lastHeard>2000;
+  $('hud').textContent=
+    (stale?'⚠ NO DATA ('+((now-st.lastHeard)/1000).toFixed(1)+' s)\n':'')+
+    'code      '+code+'\n'+
+    'packets   '+st.rate.toFixed(0)+' /s\n'+
+    'gap       '+med.toFixed(0)+' ms median, '+p95.toFixed(0)+' ms worst 5%\n'+
+    'round trip '+(st.rtt==null?'–':st.rtt.toFixed(0)+' ms')+'\n'+
+    'spin      '+st.rot.toFixed(0)+' °/s\n'+
+    'accel     '+(st.acc||0).toFixed(1)+' m/s²\n'+
+    'hits      '+st.hits.map(h=>Math.round(h.v)).join('  ');
+}
+
+// ================= PHONE =================
+let ph={ori:null,seq:0,lastSend:0,rot:0,acc:0,peak:0,peakT:0,lastHit:0,linked:false};
+function startPhone(pre){
+  role='phone'; show('join');
+  if(pre) $('codeIn').value=pre;
+  $('bJoin').onclick=joinPhone;
+}
+async function joinPhone(){
+  code=$('codeIn').value.trim().toUpperCase(); if(code.length!==4){ $('jStatus').textContent='4 letters.'; return; }
+  try{ if(typeof DeviceOrientationEvent!=='undefined' && DeviceOrientationEvent.requestPermission) await DeviceOrientationEvent.requestPermission(); }catch(e){}
+  try{ if(typeof DeviceMotionEvent!=='undefined' && DeviceMotionEvent.requestPermission) await DeviceMotionEvent.requestPermission(); }catch(e){}
+  window.addEventListener('deviceorientation',e=>{ if(e.beta!=null) ph.ori={a:e.alpha||0,b:e.beta,g:e.gamma}; });
+  window.addEventListener('devicemotion',onMotion);
+  try{ if(navigator.wakeLock) await navigator.wakeLock.request('screen'); }catch(e){}
+  $('jStatus').textContent='Connecting…';
+  onMsg=m=>{
+    if(m.t==='ok' && !ph.linked){ ph.linked=true; show('ctrl'); if(navigator.vibrate) navigator.vibrate(60); }
+    if(m.t==='pq') send({t:'pr',s:m.s});
+  };
+  connect(()=>{ const hi=()=>{ if(!ph.linked) send({t:'hello'},1); }; hi(); const iv=setInterval(()=>{ ph.linked?clearInterval(iv):hi(); },1200);
+                setTimeout(()=>{ if(!ph.linked) $('jStatus').textContent='No screen with this code.'; },12000); },
+          ()=>{ $('jStatus').textContent='No connection to the relay.'; });
+  setInterval(tick,16);
+}
+function onMotion(e){
+  const r=e.rotationRate; if(r){ ph.rot=Math.hypot(r.alpha||0,r.beta||0,r.gamma||0); }
+  const a=e.acceleration; if(a && a.x!=null) ph.acc=Math.hypot(a.x,a.y,a.z);
+  // swing = spin rises over 400 °/s, then falls back: report its peak once
+  const now=performance.now();
+  if(ph.rot>400){ if(ph.rot>ph.peak){ ph.peak=ph.rot; ph.peakT=now; } }
+  else if(ph.peak && now-ph.lastHit>350){ send({t:'hit',v:ph.peak},1); ph.lastHit=now; ph.peak=0; if(navigator.vibrate) navigator.vibrate(30); }
+  else ph.peak=0;
+}
+function tick(){
+  if(!ph.linked || !ph.ori) return;
+  const now=performance.now(); if(now-ph.lastSend<33) return;    // ~30 packets per second
+  ph.lastSend=now;
+  send({t:'o',s:ph.seq++,a:+ph.ori.a.toFixed(1),b:+ph.ori.b.toFixed(1),g:+ph.ori.g.toFixed(1),r:Math.round(ph.rot),ac:+ph.acc.toFixed(1)});
+  $('cInfo').textContent='spin '+Math.round(ph.rot)+' °/s · sent '+ph.seq;
+}
+$('bZero').onclick=()=>{ send({t:'zero'},1); if(navigator.vibrate) navigator.vibrate(40); };
+
+// ---------- start ----------
+$('bScreen').onclick=startScreen;
+$('bPhone').onclick=()=>startPhone('');
+const pre=new URLSearchParams(location.search).get('c');
+if(pre) startPhone(pre.toUpperCase());
+</script>
+</body>
+</html>
