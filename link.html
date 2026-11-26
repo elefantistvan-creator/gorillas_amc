@@ -21,6 +21,8 @@
   #hud{position:absolute;left:12px;top:10px;font:13px/1.5 ui-monospace,monospace;color:#9fb0d8;text-align:left;pointer-events:none;white-space:pre}
   #hitTxt{position:absolute;left:0;right:0;top:12%;text-align:center;font-size:64px;font-weight:800;opacity:0;transition:opacity .5s;pointer-events:none}
   #ctrl .big{font-size:48px;font-weight:800}
+  body.xr,body.xr #ctrl{background:transparent!important}
+  body.xr #pad{background:rgba(10,16,32,.55)}
   #pad{width:100%;flex:1;border-radius:18px;background:#121a30;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;user-select:none}
 </style>
 </head>
@@ -64,7 +66,8 @@
     <div class="big" id="cState">LINKED</div>
     <div class="muted" id="cInfo">Hold the phone like a bat, screen facing you.</div>
   </div>
-  <button id="bZero">Zero (hold still, tap)</button>
+  <button id="bXR">Start 3D tracking</button>
+  <button id="bZero" class="alt">Zero (hold still, tap)</button>
 </div>
 
 <script>
@@ -134,6 +137,10 @@ function rotMat(a,b,g){
           cg*sa+ca*sb*sg,  ca*cb, sa*sg-ca*cg*sb,
           -cb*sg,          sb,    cb*cg];
 }
+function quatMat(q){ const [x,y,z,w]=q;   // rotation matrix (row-major) of a unit quaternion
+  return [1-2*(y*y+z*z), 2*(x*y-z*w), 2*(x*z+y*w),
+          2*(x*y+z*w), 1-2*(x*x+z*z), 2*(y*z-x*w),
+          2*(x*z-y*w), 2*(y*z+x*w), 1-2*(x*x+y*y)]; }
 function mulTA(A,B){ const R=new Array(9); for(let i=0;i<3;i++)for(let j=0;j<3;j++){ R[i*3+j]=A[i]*B[j]+A[3+i]*B[3+j]+A[6+i]*B[6+j]; } return R; } // A^T·B
 function apply(R,p){ return [R[0]*p[0]+R[1]*p[1]+R[2]*p[2], R[3]*p[0]+R[4]*p[1]+R[5]*p[2], R[6]*p[0]+R[7]*p[1]+R[8]*p[2]]; }
 
@@ -157,7 +164,12 @@ function screenMsg(m){
   if(m.t==='hello'){ if(!st.linked){ st.linked=true; show('screen'); resize(); } send({t:'ok'},1); rtcStart(true); return; }
   if(!st.linked){ st.linked=true; show('screen'); resize(); }
   if(m.t==='pr'){ st.rtt=performance.now()-m.s; (st.rtts=st.rtts||[]).push(st.rtt); if(st.rtts.length>10) st.rtts.shift(); return; }
-  if(m.t==='zero'){ st.R0=null; return; }
+  if(m.t==='zero'){ st.R0=null; st.P0=null; return; }
+  if(m.t==='x'){   // full 3D pose from the phone's AR tracking (metres + quaternion)
+    if(m.s<=st.lastSeq && st.lastSeq-m.s<1000) return; st.lastSeq=m.s;
+    const now=performance.now(); if(st.lastArr){ st.gaps.push(now-st.lastArr); if(st.gaps.length>60) st.gaps.shift(); } st.lastArr=now; st.msgs++;
+    st.mode3d=true; st.R=quatMat(m.q); st.P=m.p; if(!st.R0){ st.R0=st.R; st.P0=st.P; }
+    st.rot=m.r||0; st.acc=m.ac||0; st.track=m.tr; return; }
   if(m.t==='hit'){ if(m.id<=(st.lastHit||0)) return; st.lastHit=m.id; st.hits.push({v:m.v,t:performance.now()}); if(st.hits.length>8) st.hits.shift(); flashHit(m.v); return; }
   if(m.t==='o'){
     if(m.s<=st.lastSeq && st.lastSeq-m.s<1000) return;   // the same packet arrives through both relays: first one wins
@@ -181,11 +193,23 @@ function draw(){
   const now=performance.now();
   if(now-st.rateT>1000){ st.rate=st.msgs*1000/(now-st.rateT||1); st.msgs=0; st.rateT=now; }
   cx.fillStyle='#0b1020'; cx.fillRect(0,0,W,H);
-  const S=Math.min(W,H)/40, ox=W/2, oy=H*0.55;
+  const S=Math.min(W,H)/(st.mode3d?90:40), ox=W/2, oy=H*0.55;
   // trail of the blade centre
   let Rrel=null;
   if(st.R && st.R0){ Rrel=mulTA(st.R0,st.R); }
-  const proj=p=>{ const q=Rrel?apply(Rrel,p):p; const k=1/(1-q[2]/60); return [ox+q[0]*S*k, oy-q[1]*S*k, q[2]]; };
+  let off=[0,0,0];
+  if(st.mode3d && st.P && st.P0 && st.R0){ const d=[(st.P[0]-st.P0[0])*100,(st.P[1]-st.P0[1])*100,(st.P[2]-st.P0[2])*100];
+    off=[st.R0[0]*d[0]+st.R0[3]*d[1]+st.R0[6]*d[2], st.R0[1]*d[0]+st.R0[4]*d[1]+st.R0[7]*d[2], st.R0[2]*d[0]+st.R0[5]*d[1]+st.R0[8]*d[2]]; }  // R0^T·d
+  st.off=off;
+  const EYE=st.mode3d?120:60;   // eye distance (cm) for the perspective
+  const proj=p=>{ const r=Rrel?apply(Rrel,p):p; const q=[r[0]+off[0],r[1]+off[1],r[2]+off[2]]; const k=1/Math.max(0.15,1-q[2]/EYE); return [ox+q[0]*S*k, oy-q[1]*S*k, q[2]]; };
+  if(st.mode3d){   // a floor-like reference: the zero point's square, so depth is readable
+    cx.strokeStyle='rgba(120,140,200,.35)'; cx.lineWidth=1;
+    for(const zz of [-40,-20,0,20,40]){ const a=projRaw([-40,-30,zz]), b=projRaw([40,-30,zz]); cx.beginPath(); cx.moveTo(a[0],a[1]); cx.lineTo(b[0],b[1]); cx.stroke(); }
+    for(const xx of [-40,-20,0,20,40]){ const a=projRaw([xx,-30,-40]), b=projRaw([xx,-30,40]); cx.beginPath(); cx.moveTo(a[0],a[1]); cx.lineTo(b[0],b[1]); cx.stroke(); }
+    const sh=projRaw([off[0],-30,off[2]]); cx.fillStyle='rgba(0,0,0,.45)'; cx.beginPath(); cx.ellipse(sh[0],sh[1],10*S/EYE*8,3*S/EYE*8,0,0,Math.PI*2); cx.fill();
+  }
+  function projRaw(q){ const k=1/Math.max(0.15,1-q[2]/EYE); return [ox+q[0]*S*k, oy-q[1]*S*k]; }
   const c=proj([0,9,0]); st.trail.push([c[0],c[1],now]); while(st.trail.length && now-st.trail[0][2]>350) st.trail.shift();
   cx.lineWidth=6; cx.lineCap='round';
   for(let i=1;i<st.trail.length;i++){ const a=st.trail[i-1], b=st.trail[i]; cx.strokeStyle='rgba(120,170,255,'+(i/st.trail.length*0.5)+')'; cx.beginPath(); cx.moveTo(a[0],a[1]); cx.lineTo(b[0],b[1]); cx.stroke(); }
@@ -205,12 +229,13 @@ function draw(){
   const stale=now-st.lastHeard>2000;
   $('hud').textContent=
     (stale?'⚠ NO DATA ('+((now-st.lastHeard)/1000).toFixed(1)+' s)\n':'')+
-    'build     4\n'+
+    'build     5\n'+
     'code      '+code+'\n'+
     'path      '+(path==='direct'?'DIRECT'+(pathKind==='host'?' (local network)':pathKind?' ('+pathKind+', via internet)':''):'relay (public server)')+'\n'+
     'packets   '+st.rate.toFixed(0)+' /s\n'+
     'gap       '+med.toFixed(0)+' ms median, '+p95.toFixed(0)+' ms worst 5%\n'+
     'round trip '+(st.rtt==null?'–':st.rtt.toFixed(0)+' ms  (last 10: '+Math.round(Math.min(...st.rtts))+'–'+Math.round(Math.max(...st.rtts))+')')+'\n'+
+    (st.mode3d?'position  x '+st.off[0].toFixed(0)+'  y '+st.off[1].toFixed(0)+'  z '+st.off[2].toFixed(0)+' cm'+(st.track===false?'  (tracking lost)':'')+'\n':'mode      tilt only\n')+
     'spin      '+st.rot.toFixed(0)+' °/s\n'+
     'accel     '+(st.acc||0).toFixed(1)+' m/s²\n'+
     'hits      '+st.hits.map(h=>Math.round(h.v)).join('  ');
@@ -250,12 +275,38 @@ function onMotion(e){
   else ph.peak=0;
 }
 function tick(){
-  if(!ph.linked || !ph.ori) return;
+  if(!ph.linked || !ph.ori || ph.xr) return;
   const now=performance.now(); if(now-ph.lastSend<33) return;    // ~30 packets per second
   ph.lastSend=Math.max(ph.lastSend+33,now-33);
   send({t:'o',s:ph.seq++,a:+ph.ori.a.toFixed(1),b:+ph.ori.b.toFixed(1),g:+ph.ori.g.toFixed(1),r:Math.round(ph.rot),ac:+ph.acc.toFixed(1)});
   $('cInfo').textContent='spin '+Math.round(ph.rot)+' °/s · sent '+ph.seq;
 }
+// 3D: the phone's own AR tracking (ARCore through WebXR) gives its position in the room
+$('bXR').onclick=async()=>{
+  if(ph.xr){ ph.xr.end(); return; }
+  try{
+    if(!navigator.xr || !(await navigator.xr.isSessionSupported('immersive-ar'))){ $('cInfo').textContent='3D tracking is not supported on this phone/browser.'; return; }
+    const ses=await navigator.xr.requestSession('immersive-ar',{requiredFeatures:['local'],optionalFeatures:['dom-overlay'],domOverlay:{root:$('ctrl')}});
+    const cvs=document.createElement('canvas'), gl=cvs.getContext('webgl',{xrCompatible:true});
+    await ses.updateRenderState({baseLayer:new XRWebGLLayer(ses,gl)});
+    const space=await ses.requestReferenceSpace('local');
+    ph.xr=ses; document.body.classList.add('xr'); $('bXR').textContent='Stop 3D tracking'; $('cState').textContent='3D';
+    send({t:'zero'},1);
+    let last=0;
+    const frame=(t,fr)=>{ if(!ph.xr) return; ses.requestAnimationFrame(frame);
+      const lay=ses.renderState.baseLayer; gl.bindFramebuffer(gl.FRAMEBUFFER,lay.framebuffer); gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
+      const pose=fr.getViewerPose(space); const now=performance.now();
+      if(now-last<16) return; last=now;                 // ~60 packets per second
+      if(!pose){ send({t:'x',s:ph.seq++,p:ph.lp||[0,0,0],q:ph.lq||[0,0,0,1],tr:false,r:Math.round(ph.rot)}); return; }
+      const p=pose.transform.position, o=pose.transform.orientation;
+      ph.lp=[+p.x.toFixed(4),+p.y.toFixed(4),+p.z.toFixed(4)]; ph.lq=[+o.x.toFixed(4),+o.y.toFixed(4),+o.z.toFixed(4),+o.w.toFixed(4)];
+      send({t:'x',s:ph.seq++,p:ph.lp,q:ph.lq,tr:!pose.emulatedPosition,r:Math.round(ph.rot),ac:+ph.acc.toFixed(1)});
+      $('cInfo').textContent='x '+(p.x*100).toFixed(0)+'  y '+(p.y*100).toFixed(0)+'  z '+(p.z*100).toFixed(0)+' cm'+(pose.emulatedPosition?' · tracking lost':'');
+    };
+    ses.requestAnimationFrame(frame);
+    ses.addEventListener('end',()=>{ ph.xr=null; document.body.classList.remove('xr'); $('bXR').textContent='Start 3D tracking'; $('cState').textContent='LINKED'; });
+  }catch(e){ $('cInfo').textContent='3D start failed: '+(e.message||e); }
+};
 $('bZero').onclick=()=>{ send({t:'zero'},1); if(navigator.vibrate) navigator.vibrate(40); };
 
 // ---------- start ----------
