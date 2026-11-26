@@ -48,9 +48,9 @@
 <div id="ctrl" class="wrap hidden">
   <div id="pad">
     <div class="big2">TRAY</div>
-    <div class="muted" id="cInfo">Hold the phone flat in ONE hand, screen up, like a tray.<br>Look at the big screen, not here.</div>
+    <div class="muted" id="cInfo">Hold the phone flat in ONE hand, screen up, like a tray.<br>Phone level with the floor = tray level.<br>Look at the big screen, not here.</div>
   </div>
-  <button id="bZero">Zero (hold level, tap)</button>
+  <button id="bZero" class="alt">Re-level (optional)</button>
 </div>
 <script>
 // ---------- relay: same public MQTT brokers as the Gorillas game ----------
@@ -117,7 +117,7 @@ async function checkPath(){   // host = same local network, srflx/prflx = throug
 // ================= SCREEN =================
 const TW=60, TH=40, R=1.6;                 // tray 60×40 cm, ball radius 1.6 cm
 const G=981*5/7;                           // rolling ball on a slope: a = 5/7·g·sinθ (cm/s²)
-let st={linked:false,lastHeard:0,lastSeq:-1,b:0,g:0,b0:null,g0:null,tx:0,ty:0,
+let st={linked:false,lastHeard:0,lastSeq:-1,b:0,g:0,b0:0,g0:0,tx:0,ty:0,
         ball:{x:0,y:0,vx:0,vy:0,z:0,vz:0,falling:false,t:0},run:0,best:0,falls:0,rate:0,msgs:0,rateT:0};
 function startScreen(){
   role='screen';
@@ -135,13 +135,12 @@ function startScreen(){
 function screenMsg(m){
   st.lastHeard=performance.now();
   if(m.t==='hello'){ if(!st.linked){ st.linked=true; show('screen'); resize(); } send({t:'ok'},1); rtcStart(true); return; }
-  if(m.t==='zero'){ st.b0=null; return; }
+  if(m.t==='zero'){ st.zeroNext=true; return; }
   if(m.t==='o'){ if(m.s<=st.lastSeq && st.lastSeq-m.s<1000) return; st.lastSeq=m.s; st.msgs++;
-    st.b=m.b; st.g=m.g; if(st.b0==null){ st.b0=m.b; st.g0=m.g; } }
+    st.b=m.b; st.g=m.g; if(st.zeroNext){ st.zeroNext=false; st.b0=m.b; st.g0=m.g; respawn(); } }
 }
 function respawn(){ const b=st.ball; b.x=0;b.y=0;b.vx=0;b.vy=0;b.z=0;b.vz=0;b.falling=false; st.run=0; }
 function step(dt){
-  if(st.b0==null) return;
   // tray tilt (deg) from the phone, relative to the zero pose; light smoothing only
   const wx=Math.max(-35,Math.min(35,st.g-st.g0)), wy=Math.max(-35,Math.min(35,st.b-st.b0));
   st.tx+= (wx-st.tx)*0.5; st.ty+=(wy-st.ty)*0.5;
@@ -193,7 +192,7 @@ function draw(){
   if(q[1]<H+50){ const bg=cx.createRadialGradient(q[0]-rr*.35,q[1]-rr*.35,rr*.1,q[0],q[1],rr);
     bg.addColorStop(0,'#f2f4f8'); bg.addColorStop(1,'#59606e'); cx.fillStyle=bg; cx.beginPath(); cx.arc(q[0],q[1],rr,0,7); cx.fill(); }
   const stale=performance.now()-st.lastHeard>1500;
-  $('hud').textContent=(stale?'⚠ no data from the phone\n':'')+(st.b0==null?'press Zero on the phone\n':'')+
+  $('hud').textContent=(stale?'⚠ no data from the phone\n':'')+
     'on tray   '+st.run.toFixed(1)+' s\n'+'best      '+st.best.toFixed(1)+' s\n'+'falls     '+st.falls+'\n'+
     'tilt      '+st.tx.toFixed(0)+'° / '+st.ty.toFixed(0)+'°\n'+'link      '+(path==='direct'?'direct':'relay')+' · '+st.rate.toFixed(0)+'/s';
 }
