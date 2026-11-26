@@ -77,17 +77,54 @@ const show=id=>{ for(const s of ['pick','wait','screen','join','ctrl']) $(s).cla
 function loadScript(src,cb,err){ const s=document.createElement('script'); s.src=src; s.onload=cb; s.onerror=err; document.head.appendChild(s); }
 function inbox(){ return ROOT+code+(role==='screen'?'/s':'/c'); }
 function outbox(){ return ROOT+code+(role==='screen'?'/c':'/s'); }
-function send(m,qos){ const t=JSON.stringify(m); for(const c of clients){ try{ if(c.connected) c.publish(outbox(),t,{qos:qos||0}); }catch(e){} } }
+let pc=null, dc=null, path='relay';
+function send(m,qos){ const t=JSON.stringify(m);
+  if(dc && dc.readyState==='open' && m.t!=='sdp' && m.t!=='ice'){ try{ dc.send(t); return; }catch(e){} }
+  relaySend(t,qos); }
+function relaySend(t,qos){ for(const c of clients){ try{ if(c.connected) c.publish(outbox(),t,{qos:qos||0}); }catch(e){} } }
 function connect(onReady,onErr){
   const go=()=>{ let ready=false, failed=0;
     for(const url of BROKERS){
       let c; try{ c=mqtt.connect(url,{clientId:'pl_'+Math.random().toString(36).slice(2,10),clean:true,reconnectPeriod:3000,connectTimeout:8000}); }catch(e){ failed++; continue; }
       clients.push(c);
       c.on('connect',()=>{ c.subscribe(inbox(),{qos:0}); if(!ready){ ready=true; onReady(); } });
-      c.on('message',(tp,p)=>{ try{ onMsg(JSON.parse(p.toString())); }catch(e){} });
+      c.on('message',(tp,p)=>{ try{ const m=JSON.parse(p.toString()); if(m.t==='sdp'||m.t==='ice') rtcSignal(m); else onMsg(m); }catch(e){} });
       c.on('error',()=>{ if(++failed>=BROKERS.length && !ready) onErr(); });
     } };
   if(window.mqtt) go(); else loadScript('https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js',go,onErr);
+}
+
+// ---------- direct link (WebRTC): the relay only carries the handshake ----------
+function rtcStart(isScreen){
+  if(pc) return;
+  pc=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
+  pc.onicecandidate=e=>{ if(e.candidate) send({t:'ice',c:e.candidate.toJSON()},1); };
+  pc.onconnectionstatechange=()=>{ if(pc.connectionState==='failed'||pc.connectionState==='closed'){ path='relay'; dc=null; } };
+  const wire=ch=>{ dc=ch; ch.onopen=()=>{ path='direct'; checkPath(); }; ch.onclose=()=>{ path='relay'; };
+    ch.onmessage=e=>{ try{ onMsg(JSON.parse(e.data)); }catch(x){} }; };
+  if(isScreen){
+    wire(pc.createDataChannel('ctl',{ordered:false,maxRetransmits:0}));   // late packet = useless, never resend
+    pc.createOffer().then(o=>pc.setLocalDescription(o)).then(()=>send({t:'sdp',d:pc.localDescription.toJSON()},1));
+  } else pc.ondatachannel=e=>wire(e.channel);
+}
+let iceWait=[];
+async function rtcSignal(m){
+  if(m.t==='sdp'){
+    if(m.d.type==='offer'){ if(pc) return; rtcStart(false); }
+    if(!pc || pc.remoteDescription) return;
+    await pc.setRemoteDescription(m.d);
+    for(const c of iceWait){ try{ await pc.addIceCandidate(c); }catch(e){} } iceWait=[];
+    if(m.d.type==='offer'){ const a=await pc.createAnswer(); await pc.setLocalDescription(a); send({t:'sdp',d:pc.localDescription.toJSON()},1); }
+  } else if(m.t==='ice'){
+    if(!pc || !pc.remoteDescription) iceWait.push(m.c); else { try{ await pc.addIceCandidate(m.c); }catch(e){} }
+  }
+}
+let pathKind='';
+async function checkPath(){   // host = same local network, srflx/prflx = through the internet, relay = TURN
+  try{ const r=await pc.getStats(); let pair=null, loc={};
+    r.forEach(v=>{ if(v.type==='candidate-pair' && v.nominated && v.state==='succeeded') pair=v; if(v.type==='local-candidate') loc[v.id]=v; });
+    if(pair && loc[pair.localCandidateId]) pathKind=loc[pair.localCandidateId].candidateType;
+  }catch(e){}
 }
 
 // ---------- rotation maths (W3C: R = Rz(alpha)·Rx(beta)·Ry(gamma), device -> world) ----------
@@ -112,14 +149,14 @@ function startScreen(){
   show('wait');
   onMsg=screenMsg;
   connect(()=>{ $('sStatus').textContent='Waiting for the phone…'; },()=>{ $('sStatus').textContent='No connection to the relay.'; });
-  setInterval(()=>{ if(st.linked) send({t:'pq',s:performance.now()}); },1000);   // round-trip probe
+  setInterval(()=>{ if(st.linked) send({t:'pq',s:performance.now()}); },500);   // round-trip probe
   requestAnimationFrame(draw);
 }
 function screenMsg(m){
   st.lastHeard=performance.now();
-  if(m.t==='hello'){ st.linked=true; send({t:'ok'},1); show('screen'); resize(); return; }
+  if(m.t==='hello'){ if(!st.linked){ st.linked=true; show('screen'); resize(); } send({t:'ok'},1); rtcStart(true); return; }
   if(!st.linked){ st.linked=true; show('screen'); resize(); }
-  if(m.t==='pr'){ st.rtt=performance.now()-m.s; return; }
+  if(m.t==='pr'){ st.rtt=performance.now()-m.s; (st.rtts=st.rtts||[]).push(st.rtt); if(st.rtts.length>10) st.rtts.shift(); return; }
   if(m.t==='zero'){ st.R0=null; return; }
   if(m.t==='hit'){ st.hits.push({v:m.v,t:performance.now()}); if(st.hits.length>8) st.hits.shift(); flashHit(m.v); return; }
   if(m.t==='o'){
@@ -169,9 +206,10 @@ function draw(){
   $('hud').textContent=
     (stale?'⚠ NO DATA ('+((now-st.lastHeard)/1000).toFixed(1)+' s)\n':'')+
     'code      '+code+'\n'+
+    'path      '+(path==='direct'?'DIRECT'+(pathKind==='host'?' (local network)':pathKind?' ('+pathKind+', via internet)':''):'relay (public server)')+'\n'+
     'packets   '+st.rate.toFixed(0)+' /s\n'+
     'gap       '+med.toFixed(0)+' ms median, '+p95.toFixed(0)+' ms worst 5%\n'+
-    'round trip '+(st.rtt==null?'–':st.rtt.toFixed(0)+' ms')+'\n'+
+    'round trip '+(st.rtt==null?'–':st.rtt.toFixed(0)+' ms  (last 10: '+Math.round(Math.min(...st.rtts))+'–'+Math.round(Math.max(...st.rtts))+')')+'\n'+
     'spin      '+st.rot.toFixed(0)+' °/s\n'+
     'accel     '+(st.acc||0).toFixed(1)+' m/s²\n'+
     'hits      '+st.hits.map(h=>Math.round(h.v)).join('  ');
