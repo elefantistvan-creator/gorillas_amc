@@ -191,7 +191,7 @@ function draw(){
   for(let i=1;i<st.trail.length;i++){ const a=st.trail[i-1], b=st.trail[i]; cx.strokeStyle='rgba(120,170,255,'+(i/st.trail.length*0.5)+')'; cx.beginPath(); cx.moveTo(a[0],a[1]); cx.lineTo(b[0],b[1]); cx.stroke(); }
   // which side faces the screen: normal z of the blade
   const n=Rrel?apply(Rrel,[0,0,1]):[0,0,1];
-  const front=n[2]>0;   // phone screen faces the player = rubber facing the laptop
+  const front=n[2]<0;   // red = camera side, black = screen side (seen from the player's eye)   // phone screen faces the player = rubber facing the laptop
   const poly=(pts,fill)=>{ cx.beginPath(); pts.forEach((p,i)=>{ const q=proj(p); i?cx.lineTo(q[0],q[1]):cx.moveTo(q[0],q[1]); }); cx.closePath(); cx.fillStyle=fill; cx.fill(); };
   poly(HANDLE,'#c8a070');
   poly(BLADE, front?'#d83a3a':'#222');
@@ -205,7 +205,7 @@ function draw(){
   const stale=now-st.lastHeard>2000;
   $('hud').textContent=
     (stale?'⚠ NO DATA ('+((now-st.lastHeard)/1000).toFixed(1)+' s)\n':'')+
-    'build     3\n'+
+    'build     4\n'+
     'code      '+code+'\n'+
     'path      '+(path==='direct'?'DIRECT'+(pathKind==='host'?' (local network)':pathKind?' ('+pathKind+', via internet)':''):'relay (public server)')+'\n'+
     'packets   '+st.rate.toFixed(0)+' /s\n'+
