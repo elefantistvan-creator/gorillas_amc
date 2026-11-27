@@ -149,7 +149,7 @@ function screenMsg(m){
     st.b=m.b; st.g=m.g; if(st.zeroNext){ st.zeroNext=false; st.b0=m.b; st.g0=m.g; respawn(); } }
 }
 function respawn(){ const b=st.ball; b.x=track(CPS[st.cp])[0]; b.y=CPS[st.cp]; b.vx=0;b.vy=0;b.z=0;b.vz=0;b.falling=false;
-  st.ready=false; st.levelT=0; st.hold=0; st.camX=b.x; st.camY=b.y+30; if(st.cp===0){ st.gateOpen=false; st.done=false; st.run=0; } }
+  st.ready=false; st.levelT=0; st.hold=0; st.camX=b.x; st.camY=b.y; if(st.cp===0){ st.gateOpen=false; st.done=false; st.run=0; } }
 function step(dt){
   const GAIN=SENS[st.sens];
   const wx=Math.max(-12,Math.min(12,(st.g-st.g0)*GAIN)), wy=Math.max(-12,Math.min(12,(st.b-st.b0)*GAIN));
@@ -181,7 +181,7 @@ function step(dt){
   }
   // fixed viewpoints: the camera holds still over a section, the ball travels across it, then the view moves on
   // the ball is the focus: the camera follows it softly and keeps it in the lower-middle of the screen
-  if(!b.falling){ const k=Math.min(1,dt*3); st.camY+=(b.y+30-st.camY)*k; st.camX+=(b.x-st.camX)*k*0.8; }
+  if(!b.falling){ st.camX=b.x; st.camY=b.y; }       // the ball is locked to the centre; the course moves around it
   if(!b.falling){ const wx=-b.vy/R, wy=b.vx/R, ang=Math.hypot(wx,wy)*dt;       // ball spin from rolling
     if(ang>1e-6){ const ux=wx/Math.hypot(wx,wy), uy=wy/Math.hypot(wx,wy), c=Math.cos(ang), sn=Math.sin(ang);
       st.spots=st.spots.map(([x,y,z])=>{ const d=ux*x+uy*y;                 // rotate about axis (ux,uy,0)
@@ -201,7 +201,7 @@ function P(x,y,z){
   let Y2=Y*Math.cos(ay)-Z*Math.sin(ay), Z2=Y*Math.sin(ay)+Z*Math.cos(ay);
   const el=30*d, up=Y2*Math.sin(el)+Z2*Math.cos(el), depth=Y2*Math.cos(el)-Z2*Math.sin(el);
   const dist=140, k=dist/Math.max(20,dist+depth), S=W/110;
-  return [W/2+X*S*k, H*0.62-up*S*k, k*S];
+  return [W/2+X*S*k, H*0.56-up*S*k, k*S];
 }
 function poly(pts,fill){ cx.beginPath(); pts.forEach((p,i)=>i?cx.lineTo(p[0],p[1]):cx.moveTo(p[0],p[1])); cx.closePath(); cx.fillStyle=fill; cx.fill(); }
 function draw(){
@@ -272,7 +272,7 @@ function draw(){
   cx.textAlign='left';
   const stale=performance.now()-st.lastHeard>1500;
   $('hud').textContent=(stale?'⚠ no data from the phone\n':'')+
-    'build     6\n'+
+    'build     7\n'+
     'course    '+Math.round(Math.max(0,b.y)/LEN*100)+' %\n'+'best      '+Math.round(st.best/LEN*100)+' %\n'+'falls     '+st.falls+'\n'+
     'time      '+st.run.toFixed(1)+' s\n'+'sens      '+st.sens+'  (keys 1–5)\n'+'link      '+(path==='direct'?'direct':'relay')+' · '+st.rate.toFixed(0)+'/s';
 }
