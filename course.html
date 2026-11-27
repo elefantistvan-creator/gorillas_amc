@@ -149,7 +149,7 @@ function screenMsg(m){
     st.b=m.b; st.g=m.g; if(st.zeroNext){ st.zeroNext=false; st.b0=m.b; st.g0=m.g; respawn(); } }
 }
 function respawn(){ const b=st.ball; b.x=track(CPS[st.cp])[0]; b.y=CPS[st.cp]; b.vx=0;b.vy=0;b.z=0;b.vz=0;b.falling=false;
-  st.ready=false; st.levelT=0; st.hold=0; st.camX=b.x; st.camY=b.y+20; if(st.cp===0){ st.gateOpen=false; st.done=false; st.run=0; } }
+  st.ready=false; st.levelT=0; st.hold=0; st.sec=Math.floor((b.y+35)/110); st.tgY=st.sec*110+45; st.tgX=track(st.tgY)[0]; st.camX=st.tgX; st.camY=st.tgY; if(st.cp===0){ st.gateOpen=false; st.done=false; st.run=0; } }
 function step(dt){
   const GAIN=SENS[st.sens];
   const wx=Math.max(-12,Math.min(12,(st.g-st.g0)*GAIN)), wy=Math.max(-12,Math.min(12,(st.b-st.b0)*GAIN));
@@ -179,9 +179,9 @@ function step(dt){
     b.t+=dt; b.vz-=981*dt; b.z+=b.vz*dt; b.x+=b.vx*dt; b.y+=b.vy*dt;
     if(b.t>0.8) respawn();
   }
-  const ey=b.y+20-st.camY, ex=b.x-st.camX;                 // camera has slack: the ball visibly moves before the view follows
-  if(ey>25) st.camY+=(ey-25)*Math.min(1,dt*2); else if(ey<-30) st.camY+=(ey+30)*Math.min(1,dt*2);
-  if(Math.abs(ex)>18) st.camX+=(ex-Math.sign(ex)*18)*Math.min(1,dt*2);
+  // fixed viewpoints: the camera holds still over a section, the ball travels across it, then the view moves on
+  if(!b.falling){ const SEC=110, sec=Math.floor((b.y+35)/SEC); if(sec!==st.sec){ st.sec=sec; st.tgY=sec*SEC+45; st.tgX=track(st.tgY)[0]; } }
+  if(st.tgY!=null){ const k=Math.min(1,dt*2.5); st.camY+=(st.tgY-st.camY)*k; st.camX+=(st.tgX-st.camX)*k; }
   if(!b.falling){ const wx=-b.vy/R, wy=b.vx/R, ang=Math.hypot(wx,wy)*dt;       // ball spin from rolling
     if(ang>1e-6){ const ux=wx/Math.hypot(wx,wy), uy=wy/Math.hypot(wx,wy), c=Math.cos(ang), sn=Math.sin(ang);
       st.spots=st.spots.map(([x,y,z])=>{ const d=ux*x+uy*y;                 // rotate about axis (ux,uy,0)
@@ -195,7 +195,7 @@ addEventListener('resize',resize);
 addEventListener('keydown',e=>{ const n=+e.key; if(n>=1&&n<=5){ st.sens=n; flash('sensitivity '+n); } });
 // world point (x right, y along the course, z up; cm) -> screen; the whole course tilts around the camera point
 function P(x,y,z){
-  const d=Math.PI/180, ax=st.tx*d, ay=st.ty*d;
+  const d=Math.PI/180, ax=0, ay=0;
   x-=st.camX; y-=st.camY;
   let X=x*Math.cos(ax)+z*Math.sin(ax), Z=-x*Math.sin(ax)+z*Math.cos(ax), Y=y;
   let Y2=Y*Math.cos(ay)-Z*Math.sin(ay), Z2=Y*Math.sin(ay)+Z*Math.cos(ay);
@@ -265,10 +265,14 @@ function draw(){
   if(st.ready && !st.gateOpen && b.y>STOP_Y0 && b.y<GATE_Y && !b.falling){
     cx.font='bold 24px system-ui'; cx.fillStyle='#9cc4ff'; cx.fillText(st.hold>0?'stay still…':'stop here', W/2, H*0.14);
     cx.fillStyle='#9cc4ff'; cx.fillRect(W/2-100,H*0.14+14,200*Math.min(1,st.hold/2),6); }
+  { const lx=W-90, ly=H-90, rad=60, mx=Math.max(-1,Math.min(1,st.tx/12)), my=Math.max(-1,Math.min(1,st.ty/12));
+    cx.strokeStyle='rgba(200,210,230,.5)'; cx.lineWidth=2; cx.beginPath(); cx.arc(lx,ly,rad,0,7); cx.stroke();
+    cx.beginPath(); cx.arc(lx,ly,rad*0.33,0,7); cx.stroke();
+    cx.fillStyle='rgba(120,220,150,.9)'; cx.beginPath(); cx.arc(lx-mx*rad*0.85, ly-my*rad*0.85, 9,0,7); cx.fill(); cx.lineWidth=1; }  // bubble floats to the high side
   cx.textAlign='left';
   const stale=performance.now()-st.lastHeard>1500;
   $('hud').textContent=(stale?'⚠ no data from the phone\n':'')+
-    'build     3\n'+
+    'build     4\n'+
     'course    '+Math.round(Math.max(0,b.y)/LEN*100)+' %\n'+'best      '+Math.round(st.best/LEN*100)+' %\n'+'falls     '+st.falls+'\n'+
     'time      '+st.run.toFixed(1)+' s\n'+'sens      '+st.sens+'  (keys 1–5)\n'+'link      '+(path==='direct'?'direct':'relay')+' · '+st.rate.toFixed(0)+'/s';
 }
