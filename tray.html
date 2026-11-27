@@ -138,7 +138,7 @@ function screenMsg(m){
   if(m.t==='zero'){ st.zeroNext=true; return; }
   if(m.t==='o'){ if(m.s<=st.lastSeq && st.lastSeq-m.s<1000) return; st.lastSeq=m.s; st.msgs++;
     const now=performance.now(); if(st.lastArr){ (st.gaps=st.gaps||[]).push(now-st.lastArr); if(st.gaps.length>90) st.gaps.shift(); } st.lastArr=now;
-    st.b=m.b; st.g=m.g; if(st.zeroNext){ st.zeroNext=false; st.b0=m.b; st.g0=m.g; respawn(); } }
+    st.b=m.b; st.g=m.g; st.ang=m.a; if(st.zeroNext){ st.zeroNext=false; st.b0=m.b; st.g0=m.g; respawn(); } }
 }
 function respawn(){ const b=st.ball; b.x=0;b.y=0;b.vx=0;b.vy=0;b.z=0;b.vz=0;b.falling=false; st.run=0; st.ready=false; st.levelT=0; }
 function step(dt){
@@ -204,7 +204,8 @@ function draw(){
   const stale=performance.now()-st.lastHeard>1500;
   $('hud').textContent=(stale?'⚠ no data from the phone\n':'')+
     'on tray   '+st.run.toFixed(1)+' s\n'+'best      '+st.best.toFixed(1)+' s\n'+'falls     '+st.falls+'\n'+
-    'build     4\n'+
+    'build     5\n'+
+    'phone     '+(st.ang===90||st.ang===270?'landscape':'portrait')+' · raw '+st.g.toFixed(0)+'° / '+st.b.toFixed(0)+'°\n'+
     'gaps      '+(()=>{ const g=(st.gaps||[]).slice().sort((a,b)=>a-b); return g.length? Math.round(g[g.length>>1])+' ms typ, '+Math.round(g[g.length-1])+' ms max':'–'; })()+'\n'+
     'tilt      '+st.tx.toFixed(0)+'° / '+st.ty.toFixed(0)+'°\n'+'link      '+(path==='direct'?'direct':'relay')+' · '+st.rate.toFixed(0)+'/s';
 }
@@ -214,10 +215,16 @@ function startPhone(pre){ role='phone'; show('join'); if(pre) $('codeIn').value=
 async function joinPhone(){
   code=$('codeIn').value.trim().toUpperCase(); if(code.length!==4){ $('jStatus').textContent='4 letters.'; return; }
   try{ if(typeof DeviceOrientationEvent!=='undefined' && DeviceOrientationEvent.requestPermission) await DeviceOrientationEvent.requestPermission(); }catch(e){}
-  addEventListener('deviceorientation',e=>{ if(e.beta!=null) ph.ori={b:e.beta,g:e.gamma}; });
+  addEventListener('deviceorientation',e=>{ if(e.beta==null) return;
+    const a=(((screen.orientation&&screen.orientation.angle)||window.orientation||0)+360)%360;
+    let b=e.beta, g=e.gamma;                       // sensor angles are in the phone's own frame (portrait)
+    if(a===90){ [b,g]=[-e.gamma, e.beta]; }        // landscape, top of the phone to the left
+    else if(a===270){ [b,g]=[e.gamma,-e.beta]; }   // landscape, top of the phone to the right
+    else if(a===180){ [b,g]=[-e.beta,-e.gamma]; }
+    ph.ori={b,g,a}; });
   setInterval(()=>{ if(!ph.linked || !ph.ori) return; const now=performance.now(); if(now-ph.last<33) return;
     ph.last=Math.max(ph.last+33,now-33);                                                         // steady ~30 per second
-    send({t:'o',s:ph.seq++,b:+ph.ori.b.toFixed(2),g:+ph.ori.g.toFixed(2)}); },8);
+    send({t:'o',s:ph.seq++,b:+ph.ori.b.toFixed(2),g:+ph.ori.g.toFixed(2),a:ph.ori.a}); },8);
   try{ if(navigator.wakeLock) await navigator.wakeLock.request('screen'); }catch(e){}
   $('jStatus').textContent='Connecting…';
   onMsg=m=>{ if(m.t==='ok' && !ph.linked){ ph.linked=true; show('ctrl'); if(navigator.vibrate) navigator.vibrate(60); } };
