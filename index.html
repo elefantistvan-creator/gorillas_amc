@@ -188,7 +188,7 @@
     <p id="joinStatus"></p>
     <button class="btn ghost" id="bBack2">BACK</button>
   </div>
-  <p style="font-size:11px;opacity:.45;margin-top:10px">build 30</p>
+  <p style="font-size:11px;opacity:.45;margin-top:10px">build 31</p>
 </div>
 <div id="unlockToast" style="position:fixed;left:50%;top:64px;transform:translateX(-50%);display:none;z-index:8;max-width:80vw;padding:8px 14px;border-radius:10px;background:rgba(10,14,28,.9);border:1px solid rgba(255,209,102,.6);color:#e8eef8;font:600 14px system-ui;text-align:center;pointer-events:none"></div>
 <div id="rpause" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(8,10,20,.6);z-index:7;color:#ffd166;font:700 26px system-ui;pointer-events:none;text-shadow:0 2px 8px #000"><span>paused</span></div>
@@ -773,7 +773,7 @@ function computePull(now){
   pull.raw={dx,dy,tension};
 }
 let lastVib=0;
-function vib(ms){ if(S.vib&&navigator.vibrate){ try{navigator.vibrate(ms);}catch(e){} } }
+function vib(ms){ if(!S.vib) return; try{ if(window.AMCApp) AMCApp.vibrate(ms|0); else if(navigator.vibrate) navigator.vibrate(ms); }catch(e){} }
 
 function pushLog(s){ log.unshift(s); if(log.length>5) log.pop(); }
 
@@ -1873,7 +1873,17 @@ const $=id=>document.getElementById(id);
 const BOXES=['menu','playBox','onlineBox','nameBox','howBox','hostBox','joinBox','godAsk'];
 let godPick=false;
 function godLabel(){ const t='GOD MODE: '+(godPick?'ON':'OFF'); $('bGod').textContent=t; $('bGodO').textContent=t; }
-function showBox(id){ BOXES.forEach(b=>$(b).style.display=(b===id?'flex':'none')); }
+function showBox(id){ curBox=id; BOXES.forEach(b=>$(b).style.display=(b===id?'flex':'none')); }
+var curBox='menu';
+// Android back button (called by the app): settings -> close, sub-menu -> main menu, game -> pause, pause -> resume; main menu -> let the app close
+// the app went to the background (call, home button): pause the running game
+window.amcAppPause=function(){ if(inGame && !paused && $('overlay').style.display==='none') $('bPause').onclick(); };
+window.amcBack=function(){
+  if($('panel').classList.contains('open')){ $('panel').classList.remove('open'); return true; }
+  if($('overlay').style.display!=='none'){ if(curBox!=='menu'){ showBox('menu'); return true; } return false; }
+  if($('pauseOv').style.display==='flex'){ $('bResume').onclick(); return true; }
+  $('bPause').onclick(); return true;
+};
 function myName(){ return loadName('amc_name','Player'); }
 let inGame=false;
 function openMenu(){ inGame=false; $('mCont').style.display='none'; $('exitMsg').style.display='none'; Net.leave(); paused=false; $('pauseOv').style.display='none'; $('panel').classList.remove('open');
@@ -1899,7 +1909,7 @@ $('mPlay').onclick=()=>{ $('cpuLvlTxt').textContent=`Level ${cpuLevel}`; showBox
 $('mOnline').onclick=()=>showBox('onlineBox');
 $('mSettings').onclick=()=>$('panel').classList.add('open');
 $('mHow').onclick=()=>showBox('howBox');
-$('mExit').onclick=()=>{ try{ window.close(); }catch(e){} setTimeout(()=>{ $('exitMsg').style.display='block'; },300); };
+$('mExit').onclick=()=>{ if(window.AMCApp){ AMCApp.exit(); return; } try{ window.close(); }catch(e){} setTimeout(()=>{ $('exitMsg').style.display='block'; },300); };
 $('bCpu').onclick=()=>startLocal('cpu');
 $('bGod').onclick=$('bGodO').onclick=()=>{ godPick=!godPick; godLabel(); };
 $('b2p').onclick=()=>askName('p2');
