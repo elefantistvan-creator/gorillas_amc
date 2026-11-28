@@ -13,12 +13,17 @@ jobs:
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '17' }
       - uses: android-actions/setup-android@v3
-      - run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: '8.14.3' }
       - name: Build debug APK (phone test) and unsigned release bundle (Play)
-        working-directory: android
-        run: set -o pipefail; gradle --no-daemon assembleDebug bundleRelease 2>&1 | tee /tmp/build.log
+        run: |
+          set -o pipefail
+          {
+            echo "java: $(java -version 2>&1 | head -1)"; echo "sdk: $ANDROID_HOME"; which sdkmanager || true
+            yes | sdkmanager --licenses > /dev/null || true
+            sdkmanager "platforms;android-36" "build-tools;36.0.0"
+            cd android && gradle --no-daemon --stacktrace assembleDebug bundleRelease
+          } 2>&1 | tee /tmp/build.log
       - name: On failure, publish the build log on the android-build-log branch
         if: failure()
         run: |
