@@ -18,7 +18,13 @@ jobs:
         with: { gradle-version: '8.14.3' }
       - name: Build debug APK (phone test) and unsigned release bundle (Play)
         working-directory: android
-        run: gradle --no-daemon assembleDebug bundleRelease
+        run: set -o pipefail; gradle --no-daemon assembleDebug bundleRelease 2>&1 | tee /tmp/build.log
+      - name: On failure, publish the build log on the android-build-log branch
+        if: failure()
+        run: |
+          mkdir -p /tmp/log && cp /tmp/build.log /tmp/log/build.log 2>/dev/null || echo "no log" > /tmp/log/build.log
+          cd /tmp/log && git init -q -b android-build-log && git config user.name gha && git config user.email gha@github.com
+          git add . && git commit -qm "build log ${GITHUB_SHA}" && git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" android-build-log
       - name: Publish the results on the android-build branch
         run: |
           mkdir -p /tmp/out
