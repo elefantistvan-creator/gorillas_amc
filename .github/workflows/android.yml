@@ -10,34 +10,30 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with: { distribution: temurin, java-version: '17' }
-      - uses: android-actions/setup-android@v3
-      - uses: gradle/actions/setup-gradle@v4
-        with: { gradle-version: '8.14.3' }
       - name: Build debug APK (phone test) and unsigned release bundle (Play)
         run: |
           set -o pipefail
           {
-            echo "java: $(java -version 2>&1 | head -1)"; echo "sdk: $ANDROID_HOME"; which sdkmanager || true
-            yes | sdkmanager --licenses > /dev/null || true
-            sdkmanager "platforms;android-36" "build-tools;36.0.0"
-            cd android && gradle --no-daemon --stacktrace assembleDebug bundleRelease
+            export JAVA_HOME="${JAVA_HOME_17_X64:-$JAVA_HOME}"; export PATH="$JAVA_HOME/bin:$PATH"
+            echo "java: $(java -version 2>&1 | head -1)"; echo "ANDROID_HOME=$ANDROID_HOME"
+            SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"; ls -la "$SDKM" || true
+            yes | "$SDKM" --licenses > /dev/null || true
+            "$SDKM" "platforms;android-36" "build-tools;36.0.0" | tail -3
+            curl -sSL https://services.gradle.org/distributions/gradle-8.14.3-bin.zip -o /tmp/g.zip && unzip -q /tmp/g.zip -d /tmp
+            cd android && /tmp/gradle-8.14.3/bin/gradle --no-daemon --stacktrace assembleDebug bundleRelease
           } 2>&1 | tee /tmp/build.log
-      - name: On failure, publish the build log on the android-build-log branch
-        if: failure()
-        run: |
-          mkdir -p /tmp/log && cp /tmp/build.log /tmp/log/build.log 2>/dev/null || echo "no log" > /tmp/log/build.log
-          cd /tmp/log && git init -q -b android-build-log && git config user.name gha && git config user.email gha@github.com
-          git add . && git commit -qm "build log ${GITHUB_SHA}" && git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" android-build-log
       - name: Publish the results on the android-build branch
         run: |
           mkdir -p /tmp/out
           cp android/app/build/outputs/apk/debug/app-debug.apk /tmp/out/gorillas-amc-debug.apk
           cp android/app/build/outputs/bundle/release/app-release.aab /tmp/out/gorillas-amc-release-unsigned.aab
           echo "${GITHUB_SHA}" > /tmp/out/SOURCE_COMMIT
-          cd /tmp/out
-          git init -q -b android-build
-          git config user.name "github-actions"; git config user.email "actions@github.com"
+          cd /tmp/out && git init -q -b android-build && git config user.name gha && git config user.email gha@github.com
           git add . && git commit -qm "Android build of ${GITHUB_SHA}"
           git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" android-build
+      - name: On failure, publish the build log on the android-build-log branch
+        if: failure()
+        run: |
+          mkdir -p /tmp/log && (cp /tmp/build.log /tmp/log/build.log 2>/dev/null || echo "no log" > /tmp/log/build.log)
+          cd /tmp/log && git init -q -b android-build-log && git config user.name gha && git config user.email gha@github.com
+          git add . && git commit -qm "build log ${GITHUB_SHA}" && git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" android-build-log
