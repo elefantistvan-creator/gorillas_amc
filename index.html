@@ -156,11 +156,11 @@
       <p><b>Aim (Touch):</b> put your finger down and drag back like a slingshot; lift to throw. Choose the control in Settings.</p>
       <p>The dotted arc shows the path in <b>calm air</b> — judge the wind yourself: the arrow at the top is <span style="color:#60a5fa">blue</span> when weak, <span style="color:#f87171">red</span> when strong.</p>
       <p>The harder and longer you pull, the more your hand trembles. You have 10 seconds per turn.</p>
-      <p><b>Bananas</b> (bottom): <b>Banana</b> plain · <b>Drill</b> bores through buildings · <b>Split</b> splits into three at the top · <b>Bounce</b> bounces three times, then stays there as a mine that hurts anyone who comes close · <b>Fire</b> leaves flames that burn for 2 turns · <b>Atom</b> huge blast. Special bananas are earned every time your banana damages the opponent (a hit or a near hit), always in this order: Bounce → Split → Drill → Fire → Atom, then again from the start. They last for the whole match.</p>
-      <p><b>Jump</b> ◀ ▶ (green): up to 2 hops before you throw, and 1 retreat hop in the 3 seconds after your banana lands — every turn. Roofs with a <b>cracked top storey</b> are unstable (new ones keep appearing): land on one and it loses a whole storey at the end of the turn, with you on it if you don't hop away.</p>
+      <p><b>Bananas</b> (bottom): <b>Banana</b> plain · <b>Drill</b> bores through buildings · <b>Split</b> splits into three at the top · <b>Bounce</b> bounces three times, then stays there as a mine that hurts anyone who comes close · <b>Fire</b> leaves flames that burn for 2 turns · <b>Atom</b> huge blast (30%). Special bananas are earned every time your banana damages the opponent (a hit or a near hit), always in this order: Bounce → Split → Drill → Fire → Atom, then again from the start. They last for the whole match.</p>
+      <p><b>Jump</b> ◀ ▶ (green): up to 2 hops before you throw, and 1 retreat hop in the 3 seconds after your banana lands — every turn. Some roofs are <b>rotten</b>, and you can't tell which until you land on one: it cracks. Hop off by the end of your next turn, or the storey collapses under you (20%). Jump back onto a cracked roof and it goes at once. Falling hurts too: 15% for every storey, so shooting the roof out from under someone pays off.</p>
       <p><b>New here?</b> Against the CPU or with 2 players on one phone the extras open one by one: a new one after every round you play (the ??? buttons). Online, and in God mode, everything is open.</p>
-      <p><b>Builds</b> (left column) take your whole turn and work once per round (they refill when a new round starts): <b>Floor+</b> / <b>Floor−</b> raise or lower the whole roof you stand on · <b>Shield</b> held in your hand: a banana that would hit you flies back flat toward the thrower (then the shield is gone); otherwise it soaks 30% blast damage (the drill goes through) · <b>Decoy</b> armed before your throw, doesn't take the turn: when your banana lands a fake gorilla appears on another roof on your side, until your next turn.</p>
-      <p><b>Hidden tricks</b> (purple), your opponent doesn't see them: <b>Umbrella</b> catches the next banana (not the drill) · <b>Wind</b> twists the wind for their next throw, while their arrow still shows the old one · <b>Time</b> they get only 4 seconds next turn · <b>Invisible</b> armed before your throw, doesn't take the turn: when your banana lands you vanish, and they only see you in their last 3 seconds.</p>
+      <p><b>Builds</b> (left column) take your whole turn and work once per round (they refill when a new round starts): <b>Floor+</b> / <b>Floor−</b> raise or lower the whole roof you stand on · <b>Shield</b> held in your hand: a banana that would hit you flies back flat toward the thrower (then the shield is gone); otherwise it soaks 30% blast damage (the drill goes through) · <b>Decoy</b> armed before your throw, doesn't take the turn: when your banana lands, a fake gorilla leaps out of you onto a neighbouring roof, like a real jump, and stays until your next turn.</p>
+      <p><b>Hidden tricks</b> (purple), your opponent doesn't see them: <b>Umbrella</b> catches the next banana (not the drill) · <b>Wind</b> twists the wind for their next throw, while their arrow still shows the old one · <b>Time</b> they get only 4 seconds next turn · <b>Invisible</b> armed before your throw, doesn't take the turn: when your banana lands you vanish for their next 2 turns (they only see you in their last 3 seconds), and you can hop around unseen.</p>
       <p><b>God mode</b> (both players agree): everything unlimited.</p>
       <p><b>Damage:</b> direct hits, near misses, fire, falling. Buildings crumble — shoot the floor away and the gorilla falls.</p>
       <p style="opacity:.7">On a PC: press on the track and drag back like a slingshot.</p>
@@ -188,7 +188,7 @@
     <p id="joinStatus"></p>
     <button class="btn ghost" id="bBack2">BACK</button>
   </div>
-  <p style="font-size:11px;opacity:.45;margin-top:10px">build 31</p>
+  <p style="font-size:11px;opacity:.45;margin-top:10px">build 32</p>
 </div>
 <div id="unlockToast" style="position:fixed;left:50%;top:64px;transform:translateX(-50%);display:none;z-index:8;max-width:80vw;padding:8px 14px;border-radius:10px;background:rgba(10,14,28,.9);border:1px solid rgba(255,209,102,.6);color:#e8eef8;font:600 14px system-ui;text-align:center;pointer-events:none"></div>
 <div id="rpause" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(8,10,20,.6);z-index:7;color:#ffd166;font:700 26px system-ui;pointer-events:none;text-shadow:0 2px 8px #000"><span>paused</span></div>
@@ -342,10 +342,10 @@ function newTrack(seed){
   wind = S.wind ? Math.round((grng()*2-1)*120) : 0;
   theme=THEMES[Math.floor(grng()*THEMES.length)]; bgCache=null;
   drawBuildings(); for(const a of [monkey,target]){ let yy=0; while(yy<WH && !solidAt(a.x,yy+1)) yy++; a.y=yy; }
-  blds.forEach((b,i)=>{ b.unstable = i>=2 && i<=blds.length-3 && grng()<0.15; b.cracked=false; if(b.unstable) drawCracks(b,false); });
+  blds.forEach((b,i)=>{ b.unstable = i>=2 && i<=blds.length-3 && grng()<0.15; b.cracked=false; });   // rotten roofs stay hidden until someone lands on one
   initClouds(); bananas=[]; mines=[]; fires=[]; chunks=[]; shotActive=false; turnClock=S.turnTime; gustT=0; parts=[]; trail=[]; debris=[]; dust=[]; corpses=[];
   used=[{},{}];   // the extras refill every round (special bananas still last the whole match)
-  selType=[0,0]; builtThisTurn=false; scopeOn=false; jumpedThisTurn=0; retreat=null; turnThrew=false; invisArm=[false,false]; decoyArm=[false,false]; invis=[false,false]; decoy=null; umbrella=[false,false]; walls=[null,null]; shield=[0,0]; scopeNext=[false,false]; timeNext=[0,0]; windTrick=null;
+  selType=[0,0]; builtThisTurn=false; scopeOn=false; jumpedThisTurn=0; retreat=null; turnThrew=false; invisArm=[false,false]; decoyArm=[false,false]; invis=[0,0]; decoy=null; turnNo=0; umbrella=[false,false]; walls=[null,null]; shield=[0,0]; scopeNext=[false,false]; timeNext=[0,0]; windTrick=null;
   if(typeof cpu!=='undefined'){ cpu.state='idle'; cpu.plan=null; cpu.shots=0; }
 }
 let apeOnRoofLater=false;
@@ -646,7 +646,7 @@ let pull={x:0,y:0,t:0,ang:0}; // live aim
 const gsm={x:0,y:0}; // smoothed gyro pull
 let debris=[], dust=[], corpses=[], shakeT=0, shakeA=0, floaters=[];
 // damage in % of life: direct hit by type; near misses get a share by distance
-const DMG={std:20, bounce:22, mini:10, drill:25, mine:25, fire:15, atom:50};
+const DMG={std:20, bounce:22, mini:10, drill:25, mine:25, fire:15, atom:30};
 // banana types: id, label, colour, ammo per player per round (-1 = unlimited)
 const BTYPES=[
   {id:'std',   name:'BANANA', col:'#ffd23f', ammo:-1},
@@ -909,8 +909,8 @@ function step(dt){
 let bannerT=1.2, hintT=6;
 function applyTimeout(){ actNo++; hitText='TIME!'; hitT=1; pushLog(`P${turn+1} time up`); nextTurn(); }
 function sensorsReady(){ return document.getElementById('overlay').style.display==='none' && !paused && !remotePaused; }
-function nextTurn(){ builtThisTurn=false; jumpedThisTurn=0; retreat=null; turnThrew=false; hintT=Math.max(hintT,0); SND.chime(); turn=1-turn;
-  invis[turn]=false; if(decoy && decoy.p===turn) decoy=null;   // your disguise lasts until your next turn
+function nextTurn(){ turnNo++; builtThisTurn=false; jumpedThisTurn=0; retreat=null; turnThrew=false; hintT=Math.max(hintT,0); SND.chime(); turn=1-turn;
+  invis[turn]=Math.max(0,(invis[turn]|0)-1); if(decoy && decoy.p===turn) decoy=null;   // invisible: 2 of their turns; decoy: until your next turn
   turnWait=0.7; bannerT=1.4; turnClock=S.turnTime;
   spawnUnstable(); turnSetup(); buildAmmoUI(); burnTick(); sendSync(); }
 // what the new player's turn brings: their scope, a time squeeze or a wind trick aimed at them
@@ -1023,7 +1023,9 @@ function apeSupport(dt){
       if(solidAt(ape.x-10,yy+1)||solidAt(ape.x,yy+1)||solidAt(ape.x+10,yy+1)){ ny=yy; ape.falling=false; break; }
     }
     ape.y=ny;
-    if(!ape.falling){ ape.vy=0; if(ape.y-ape.fallFrom>6){ boom2dust(ape.x,ape.y); SND.thud(); if(ape.noFallDmg) ape.noFallDmg=false; else damageApe(ape,10,null); } }
+    if(!ape.falling){ ape.vy=0; if(ape.y-ape.fallFrom>6){ boom2dust(ape.x,ape.y); SND.thud();
+      const fell=ape.y-ape.fallFrom, st=Math.round(fell/FLOOR), dmg=ape.fallDmg ? ape.fallDmg : (st>=1 ? st*15 : (fell>12?5:0));
+      ape.fallDmg=0; if(ape.noFallDmg) ape.noFallDmg=false; else if(dmg) damageApe(ape,dmg,null); } }
     if(ape.y>WH+60){ ape.falling=false; damageApe(ape,ape.hp,null); }
   }
 }
@@ -1066,13 +1068,15 @@ function render(now){
     return {pose:'idle'};
   };
   // invisible: the other player doesn't see you until their last 3 seconds; you see yourself as a ghost
-  const hidden=k=>invis[k] && !viewerIs(k) && (turn===k || turnClock>3), ghost=k=>invis[k] && viewerIs(k);
+  const hidden=k=>invis[k]>0 && !viewerIs(k) && (turn===k || turnClock>3), ghost=k=>invis[k]>0 && viewerIs(k);
   for(const [k,ape] of [[0,monkey],[1,target]]){ if(!ape.alive || hidden(k)) continue;
     ctx.save(); if(ghost(k)) ctx.globalAlpha=.4;
     drawApe(ape.x+(sh===ape?jx:0), ape.y, Object.assign({t:T,dir:k?-1:1,pc:PCOL[k]},poseOf(ape,k))); ctx.restore(); }
   if(decoy && !decoy.popped){ const own=viewerIs(decoy.p);
-    ctx.save(); if(own) ctx.globalAlpha=.35; drawApe(decoy.x,decoy.y,{t:T,dir:decoy.p?-1:1,pc:PCOL[decoy.p],pose:'idle'}); ctx.restore();
-    if(own){ ctx.font='bold 13px system-ui'; ctx.textAlign='center'; ctx.fillStyle='rgba(251,191,36,.8)'; ctx.fillText('DECOY',decoy.x,decoy.y-110); } }
+    // it leaps out of the real gorilla like a jump (visual only; hits use the landing spot)
+    const q=decoy.t0?Math.min(1,(performance.now()-decoy.t0)/750):1, dx=decoy.fx+(decoy.x-decoy.fx)*q, dy=decoy.fy+(decoy.y-decoy.fy)*q-Math.sin(q*Math.PI)*90;
+    ctx.save(); if(own) ctx.globalAlpha=.35; drawApe(dx,dy,{t:T,dir:decoy.p?-1:1,pc:PCOL[decoy.p],pose:q<1?'fly':'idle'}); ctx.restore();
+    if(own){ ctx.font='bold 13px system-ui'; ctx.textAlign='center'; ctx.fillStyle='rgba(251,191,36,.8)'; ctx.fillText('DECOY',dx,dy-110); } }
   if(retreat && !retreat.done && !retreat.jumped && Net.myTurn() && !(GM==='cpu'&&turn===1) && sh.alive){
     ctx.font='bold 22px system-ui'; ctx.textAlign='center'; ctx.fillStyle='#93c5fd';
     ctx.fillText(`JUMP? ${Math.max(0,Math.ceil(retreat.t))}`,sh.x,sh.y-128); }
@@ -1437,7 +1441,7 @@ function snapshot(){
   return {t:'sync',a:actNo,r:roundNo,sc:score.slice(),tu:turn,ns:nextStarter,ap:[ap(monkey),ap(target)],
     w:wind,wt:windTrick,sn:scopeNext.slice(),tn:timeNext.slice(),um:umbrella.slice(),sh:shield.slice(),
     us:used,am:ammo,ld:ladder.slice(),st:selType.slice(),fi:fires.map(f=>({x:f.x,y:f.y,by:f.by,turns:f.turns,fresh:f.fresh,vy:0})),
-    bt:builtThisTurn?1:0,jt:jumpedThisTurn,so:scopeOn?1:0,bl:blds.map(b=>({y:b.y,ch:b.ch,c:rle(b.cells),u:b.unstable?1:0,k:b.cracked?1:0})),
+    bt:builtThisTurn?1:0,jt:jumpedThisTurn,so:scopeOn?1:0,bl:blds.map(b=>({y:b.y,ch:b.ch,c:rle(b.cells),u:b.unstable?1:0,k:b.cracked?1:0,ka:b.crackAt|0,kb:b.crackBy|0})),tno:turnNo,
     mi:mines.filter(m=>!m.dead).map(m=>({x:m.x,y:m.y,by:m.by,t:m.t,armed:m.armed,dead:false,fuse:m.fuse,vy:0})),
     iv:invis.slice(),ia:invisArm.slice(),da:decoyArm.slice(),dc:decoy?Object.assign({},decoy):null};
 }
@@ -1456,9 +1460,9 @@ function applySync(s){
   wind=s.w; windTrick=s.wt; scopeNext=s.sn.slice(); timeNext=s.tn.slice(); umbrella=s.um.slice(); shield=s.sh.slice();
   used=s.us; ammo=s.am; ladder=s.ld.slice(); selType=s.st.slice(); fires=s.fi.map(f=>Object.assign({},f));
   builtThisTurn=!!s.bt; jumpedThisTurn=s.jt|0; scopeOn=!!s.so; bananas=[]; chunks=[]; shotActive=false; retreat=null; turnThrew=false;
-  mines=(s.mi||[]).map(m=>Object.assign({},m)); invis=(s.iv||[false,false]).slice(); invisArm=(s.ia||[false,false]).slice(); decoyArm=(s.da||[false,false]).slice(); decoy=s.dc?Object.assign({},s.dc):null;
+  mines=(s.mi||[]).map(m=>Object.assign({},m)); invis=(s.iv||[0,0]).map(v=>v|0); turnNo=s.tno|0; invisArm=(s.ia||[false,false]).slice(); decoyArm=(s.da||[false,false]).slice(); decoy=s.dc?Object.assign({},s.dc):null;
   blds.forEach((b,bi)=>{ const d=s.bl[bi]; if(!d) return;
-    b.unstable=!!d.u; b.cracked=!!d.k;
+    b.unstable=!!d.u; b.cracked=!!d.k; b.crackAt=d.ka|0; b.crackBy=d.kb|0;
     setBldTop(b,d.y); if(b.ch!==d.ch) return;
     const want=unrle(d.c,b.cw*b.ch), have=b.cells; let diff=0;
     for(let k=0;k<want.length;k++){ if(want[k]===have[k]) continue; diff++;
@@ -1472,11 +1476,12 @@ function applyRetreatEnd(){ actNo++; if(retreat) retreat.done=true; buildAmmoUI(
 // DECOY / INVISIBLE start the moment your banana has landed
 function startDisguise(){
   const p=turn, ape=p?target:monkey;
-  if(invisArm[p]){ invisArm[p]=false; invis[p]=true; seenAt[p]={x:ape.x,y:ape.y}; if(viewerIs(p)) floaters.push({x:ape.x,y:ape.y-100,text:'INVISIBLE',t:0,col:'#c4b5fd'}); }
+  if(invisArm[p]){ invisArm[p]=false; invis[p]=2; seenAt[p]={x:ape.x,y:ape.y}; if(viewerIs(p)) floaters.push({x:ape.x,y:ape.y-100,text:'INVISIBLE',t:0,col:'#c4b5fd'}); }
   if(decoyArm[p]){ decoyArm[p]=false;
-    const r=mulberry32((baseSeed^Math.imul(actNo+1,2654435761))>>>0), cur=bldAt(ape.x), half=blds.filter(b=>(p?b.x>WW/2:b.x+b.w<WW/2) && b!==cur && b.w>60);
-    if(half.length){ const b=half[Math.floor(r()*half.length)], x=b.x+b.w/2; let y=0; while(y<WH && !solidAt(x,y+1)) y++;
-      decoy={p,x,y,popped:false}; boom2dust(x,y); boom2dust(ape.x,ape.y); } }
+    const r=mulberry32((baseSeed^Math.imul(actNo+1,2654435761))>>>0), cur=bldAt(ape.x), ci=blds.indexOf(cur), other=p?monkey:target;
+    const near=[blds[ci-1],blds[ci+1]].filter(b=>b && b.w>40 && bldAt(other.x)!==b);
+    if(near.length){ const b=near[Math.floor(r()*near.length)], x=b.x+b.w/2; let y=0; while(y<WH && !solidAt(x,y+1)) y++;
+      decoy={p,x,y,popped:false,fx:ape.x,fy:ape.y,t0:performance.now()}; SND.thud(); } }
 }
 // unstable buildings: landing on one cracks it; at the end of the turn it loses a whole storey
 function drawCracks(b,big){
@@ -1509,23 +1514,29 @@ function spawnUnstable(){
   const occ=[bldAt(monkey.x),bldAt(target.x)];
   const c=blds.filter((b,i)=>i>=1 && i<=blds.length-2 && !b.unstable && !occ.includes(b) && b.h>FLOOR+80);
   if(!c.length) return;
-  const b=c[Math.floor(r()*c.length)]; b.unstable=true; b.cracked=false; drawCracks(b,false);
-  boom2dust(b.x+b.w/2,b.y);
+  const b=c[Math.floor(r()*c.length)]; b.unstable=true; b.cracked=false;   // no warning: it only shows when someone lands
 }
-function crackOnLanding(ape){ const b=bldAt(ape.x); if(!b || !b.unstable || b.cracked) return;
-  b.cracked=true; drawCracks(b,true); shakeT=Math.max(shakeT,0.25); shakeA=Math.max(shakeA,6); SND.thud();
+function crackOnLanding(ape){ const b=bldAt(ape.x); if(!b) return;
+  if(b.cracked){ collapseBuilding(b); return; }                 // jumped back onto a cracked roof: it goes at once
+  if(!b.unstable) return;
+  b.cracked=true; b.crackAt=turnNo; b.crackBy=ape===monkey?0:1; drawCracks(b,true); shakeT=Math.max(shakeT,0.25); shakeA=Math.max(shakeA,6); SND.thud();
   floaters.push({x:ape.x,y:ape.y-110,text:'CRACK!',t:0,col:'#fbbf24'}); }
+// end of a turn: a cracked roof goes when the one who cracked it ends their NEXT turn (they had a whole turn to hop away)
 function collapseCracked(){
   let any=false;
-  for(const b of blds){ if(!b.cracked) continue; b.cracked=false; b.unstable=false;
+  for(const b of blds){ if(b.cracked && b.crackBy===turn && turnNo>b.crackAt){ collapseBuilding(b); any=true; } }
+  return any;
+}
+function collapseBuilding(b){
+  { b.cracked=false; b.unstable=false;
     const on=[monkey,target].filter(a=>a.alive && bldAt(a.x)===b);
+    on.forEach(a=>a.fallDmg=20);                                 // riding a collapsing storey down: 20%
     let surf; if(on.length) surf=Math.min(...on.map(a=>a.y)); else { const x=b.x+b.w/2; surf=0; while(surf<WH && !solidAt(x,surf+1)) surf++; }
-    const cut=Math.round(surf+FLOOR); if(cut>WH-40) continue;
+    const cut=Math.round(surf+FLOOR); if(cut>WH-40){ on.forEach(a=>a.fallDmg=0); return; }
     setCells(b,b.x,b.y,b.w,cut-b.y,0); bCtx.clearRect(b.x-1,b.y-70,b.w+2,cut-b.y+70); paintBlock(b,b.x,cut,b.w,6);
     for(let i=0;i<4;i++) boom2dust(b.x+Math.random()*b.w,cut);
     for(let i=0;i<14;i++) debris.push({x:b.x+Math.random()*b.w,y:cut-10,vx:(Math.random()-.5)*200,vy:-Math.random()*200,s:3+Math.random()*6,rot:0,vr:(Math.random()-.5)*10,l:1.5,c:b.col});
-    shakeT=0.45; shakeA=12; SND.boom(40); checkCollapse(b); any=true; }
-  return any;
+    shakeT=0.45; shakeA=12; SND.boom(40); checkCollapse(b); }
 }
 // match commands in online play go through the host, so both phones do them at the same moment
 function matchCmd(what){
@@ -1582,7 +1593,7 @@ function unlockNext(){
   buildAmmoUI();
 }
 function lockedHint(){ const el=document.getElementById('unlockToast'); if(!el) return; el.innerHTML='Locked — a new extra opens after every round you play'; el.style.display='block'; clearTimeout(el._t); el._t=setTimeout(()=>el.style.display='none',2500); }
-let seenAt=[null,null];   // where the CPU last saw each gorilla before it vanished
+let seenAt=[null,null], turnNo=0;   // where the CPU last saw each gorilla before it vanished
 let retreat=null, turnThrew=false, invisArm=[false,false], decoyArm=[false,false], invis=[false,false], decoy=null;
 let used=[{},{}], builtThisTurn=false, scopeOn=false, jumpedThisTurn=0;
 let shield=[0,0], shieldHit=[0,0];
@@ -1717,8 +1728,8 @@ function cpuSim(x,y,vx,vy,w,tx,ty){
 function cpuPlan(){
   const lvl=cpuLevel, from=handOf(target,-1);
   let tx=monkey.x, ty=monkey.y-APE_CY;
-  if(invis[0] && seenAt[0]){ tx=seenAt[0].x; ty=seenAt[0].y-APE_CY; }          // can't see you: shoots where you were
-  if(decoy && decoy.p===0 && !decoy.popped && (invis[0] || Math.random()<0.5)){ tx=decoy.x; ty=decoy.y-APE_CY; }   // falls for the decoy
+  if(invis[0]>0 && seenAt[0]){ tx=seenAt[0].x; ty=seenAt[0].y-APE_CY; }          // can't see you: shoots where you were
+  if(decoy && decoy.p===0 && !decoy.popped && (invis[0]>0 || Math.random()<0.5)){ tx=decoy.x; ty=decoy.y-APE_CY; }   // falls for the decoy
   const wSeen=(windTrick&&windTrick.active&&windTrick.victim===1)?windTrick.shown:wind;
   const wEst=wSeen*Math.min(1,0.2+0.13*(lvl-1));                 // how well it reads the wind
   let best={score:1e9};
