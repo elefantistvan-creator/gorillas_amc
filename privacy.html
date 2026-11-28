@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gorillas AMC – Privacy Policy</title>
+<style>
+  @font-face{font-family:'Anton';src:url('fonts/Anton-Regular.ttf') format('truetype')}
+  body{margin:0;background:linear-gradient(180deg,#0b1430,#1b2a55);color:#e9edf3;font:16px/1.6 system-ui,sans-serif;min-height:100vh}
+  main{max-width:760px;margin:0 auto;padding:28px 20px 60px}
+  h1{font:400 40px 'Anton',Impact,sans-serif;letter-spacing:.06em;color:#ffcc33;margin:0 0 4px}
+  h2{font:400 22px 'Anton',Impact,sans-serif;letter-spacing:.06em;color:#ffcc33;margin:28px 0 6px}
+  p,li{color:#d7dde8} a{color:#ffcc33}
+  .muted{color:#9aa6b8;font-size:14px}
+</style>
+</head>
+<body><main>
+<h1>Gorillas AMC – Privacy Policy</h1>
+<p class="muted">LFant Studio · Last updated: 28 November 2026</p>
+
+<p>Gorillas AMC is a free game. It has no accounts, no ads, no analytics and no tracking. We (LFant Studio) do not collect, store or sell any personal data.</p>
+
+<h2>What stays on your device</h2>
+<ul>
+  <li>Your settings (control mode, sound, volume, vibration, axis inversion, aim preview).</li>
+  <li>The nickname you type in.</li>
+  <li>Your progress: which extras are unlocked and the CPU difficulty level.</li>
+</ul>
+<p>These are saved only in the app's local storage on your phone. They never leave your device, except your nickname during online play (see below). Uninstalling the app or clearing its data deletes them.</p>
+
+<h2>Motion sensors</h2>
+<p>The game reads your phone's motion sensors (rotation) only while you aim, to turn your hand movement into a throw. The sensor readings are used on your phone and are not sent or stored anywhere. In online play only the resulting throw (its speed and direction) is sent to the other player.</p>
+
+<h2>Online play</h2>
+<p>When you choose to play online, your phone and the other player's phone exchange game messages: your nickname, your moves (throws, jumps, builds) and the game state. These messages are relayed in real time through public MQTT message brokers operated by third parties (<b>broker.emqx.io</b> by EMQ Technologies and <b>broker.hivemq.com</b> by HiveMQ), over an encrypted (TLS) connection. They are delivered to the other player and are not stored by us. A short random room code connects the two phones; anyone who knows the code could join the room, so only share it with the person you want to play with.</p>
+<p>To make online play work, the game also loads two open-source libraries when needed: the MQTT client from unpkg.com and a QR-code generator from cdnjs.cloudflare.com. As with any website, these services can see your IP address when the file is downloaded.</p>
+<p>If you never use online play, no game data leaves your phone.</p>
+
+<h2>Permissions</h2>
+<ul>
+  <li><b>Internet</b> – to load the game and for online play.</li>
+  <li><b>Vibration</b> – short vibrations when you throw or get hit (can be turned off in Settings).</li>
+</ul>
+
+<h2>Children</h2>
+<p>The game is not directed at children under 13 and does not knowingly collect data from anyone.</p>
+
+<h2>Changes</h2>
+<p>If the game ever adds features that handle personal data (for example ads or purchases), this page will be updated before that version is released.</p>
+
+<h2>Contact</h2>
+<p>Questions: <a href="mailto:elefantistvan@gmail.com">elefantistvan@gmail.com</a></p>
+</main></body>
+</html>
