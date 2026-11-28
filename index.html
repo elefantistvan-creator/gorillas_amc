@@ -9,6 +9,8 @@
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <style>
+  @font-face{font-family:'Anton';src:url('fonts/Anton-Regular.ttf') format('truetype');font-display:swap}
+  :root{--navy1:#0b1430;--navy2:#1b2a55;--ink:#e9edf3;--ink2:#9aa6b8;--gold:#ffcc33;--gold2:#e8a91c}
   html,body{margin:0;height:100%;background:#111;overflow:hidden;touch-action:none;
     -webkit-user-select:none;user-select:none;font-family:system-ui,sans-serif;color:#fff}
   canvas{display:block;width:100vw;height:100vh}
@@ -25,10 +27,8 @@
   .ico{width:34px;height:34px;border-radius:9px;border:0;background:rgba(12,14,26,.45);display:flex;align-items:center;justify-content:center;gap:4px;padding:0;flex-direction:row}
   .ico i{display:block;width:4px;height:14px;background:rgba(255,255,255,.85);border-radius:1px}
   #bMenu{flex-direction:column;gap:3px} .ico b{display:block;width:16px;height:2.5px;background:rgba(255,255,255,.85);border-radius:1px}
-  #pauseOv{position:fixed;inset:0;background:rgba(8,10,20,.82);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:8}
-  #pauseOv h2{margin:0 0 6px;color:#ffd166;font-size:26px}
-  #pauseOv .btn{position:static;margin-top:10px;font-size:16px;padding:10px 24px;background:#e85d04;min-width:240px}
-  #pauseOv .btn.alt{background:#2563eb} #pauseOv .btn.ghost{background:transparent;border:1px solid rgba(255,255,255,.3)}
+  #pauseOv{position:fixed;inset:0;background:rgba(11,20,48,.86);display:none;flex-direction:row;flex-wrap:wrap;gap:10px;align-content:center;justify-content:center;z-index:8;padding:0 10vw}
+  #pauseOv h2{flex-basis:100%;text-align:center;margin:0 0 6px;color:var(--gold);font:400 34px 'Anton',Impact,sans-serif;letter-spacing:.12em}
   .box{display:none;flex-direction:column;align-items:center}
   .bigIn{font:800 30px system-ui;width:260px;text-align:center;border-radius:10px;border:0;padding:8px;margin:8px 0}
   .how{max-width:620px;text-align:left;font-size:14px;line-height:1.4;max-height:58vh;overflow:auto;padding:0 6px}
@@ -51,20 +51,40 @@
   #ammo button i{position:absolute;top:1px;right:3px;font-style:normal;font-size:9px;color:#ffd166}
   #ammo button u{position:absolute;top:50%;right:56px;transform:translateY(-50%);text-decoration:none;font-size:8px;background:#ffd166;color:#111;padding:2px 4px;border-radius:4px}
   #top .btn{position:static}
-  #panel{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9;width:300px;max-height:calc(100vh - 30px);
-    overflow:auto;background:rgba(12,14,26,.92);border-radius:12px;padding:12px 14px;
-    font-size:13px;display:none}
+  #panel{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9;width:min(360px,92vw);max-height:calc(100vh - 24px);
+    overflow:auto;background:linear-gradient(180deg,#14214a,#0f1a3a);border:1px solid rgba(233,237,243,.16);border-radius:14px;padding:12px 16px;
+    font-size:14px;display:none;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+  #panel h3{display:flex;align-items:center;justify-content:space-between;margin:2px 0 10px;font:400 24px 'Anton',Impact,sans-serif;letter-spacing:.1em;color:var(--gold)}
+  #bPanelClose{position:static;font:400 18px 'Anton',Impact,sans-serif;letter-spacing:.08em;padding:9px 20px;border-radius:10px;color:#1d1606;
+    background:linear-gradient(180deg,var(--gold),var(--gold2));border:0;box-shadow:0 3px 0 #0a0f1f}
+  #bCtrl{width:100%;margin:4px 0 10px;font:400 19px 'Anton',Impact,sans-serif;letter-spacing:.08em;padding:12px;border-radius:12px;color:var(--ink);
+    border:1px solid rgba(255,204,51,.55);background:linear-gradient(180deg,#24345f,#18264a);box-shadow:0 3px 0 #0a0f1f}
+  #bCtrl b{color:var(--gold);font-weight:400}
+  #panel input[type=range]{accent-color:var(--gold2)}
+  #builds button,#ammo button{font-family:'Anton',Impact,sans-serif;font-weight:400;letter-spacing:.06em}
+  #panel input[type=checkbox]{appearance:none;width:44px;height:24px;border-radius:12px;background:#33405f;position:relative;cursor:pointer;transition:background .15s}
+  #panel input[type=checkbox]::after{content:'';position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#cfd6e2;transition:left .15s}
+  #panel input[type=checkbox]:checked{background:var(--gold2)} #panel input[type=checkbox]:checked::after{left:23px;background:#fff}
   #panel.open{display:block}
   #panel label{display:flex;justify-content:space-between;align-items:center;margin:8px 0;gap:8px}
   #panel input[type=range]{width:130px}
-  #panel h3{margin:4px 0 8px;font-size:14px;color:#ffd166}
-  #overlay{position:fixed;inset:0;background:rgba(10,12,24,.88);display:flex;
+
+  #overlay{position:fixed;inset:0;background:linear-gradient(180deg,rgba(11,20,48,.97),rgba(27,42,85,.95));display:flex;
     flex-direction:column;align-items:center;justify-content:safe center;text-align:center;padding:20px}
-  #overlay h1{margin:0 0 10px;font-size:30px;color:#ffd166;letter-spacing:.06em}
+  #overlay h1{margin:0 0 8px;font-size:0;line-height:0}
+  #overlay h1 img{height:min(30vh,190px);width:auto;display:block;filter:drop-shadow(0 6px 14px rgba(0,0,0,.45))}
   #overlay p{max-width:520px;opacity:.85;line-height:1.45;margin:6px 0}
-  #overlay .btn{position:static;margin-top:12px;font-size:17px;padding:12px 26px;background:#e85d04;min-width:260px}
-  #overlay .btn.alt{background:#2563eb} #overlay .btn.ghost{background:transparent;border:1px solid rgba(255,255,255,.3);min-width:0}
-  #menu{display:flex;flex-direction:column;align-items:center}
+  /* menu buttons: night-blue tiles with a gold primary, Anton lettering, two per row */
+  #overlay .btn,#pauseOv .btn,.mbtn{position:static;margin:0;font:400 20px/1 'Anton',Impact,sans-serif;letter-spacing:.08em;color:var(--ink);
+    padding:13px 18px;min-width:230px;border-radius:12px;border:1px solid rgba(233,237,243,.16);
+    background:linear-gradient(180deg,#24345f,#18264a);box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 4px 0 #0a0f1f;cursor:pointer}
+  #overlay .btn:active,#pauseOv .btn:active{transform:translateY(3px);box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 1px 0 #0a0f1f}
+  #overlay .btn:not(.alt):not(.ghost),#pauseOv .btn:not(.alt):not(.ghost){background:linear-gradient(180deg,var(--gold),var(--gold2));color:#1d1606;border-color:rgba(255,230,150,.5)}
+  #overlay .btn.ghost,#pauseOv .btn.ghost{background:transparent;box-shadow:none;color:var(--ink2);border-color:rgba(233,237,243,.22)}
+  #overlay small{font-family:system-ui;font-size:12px;opacity:.8}
+  .box{gap:10px}
+  #menu,#playBox,#onlineBox{flex-direction:row;flex-wrap:wrap;justify-content:center;max-width:520px}
+  #menu{display:flex}
   .netbox{display:none;flex-direction:column;align-items:center}
   #hostBox{flex-direction:row;gap:28px} #hostBox .col{display:flex;flex-direction:column;align-items:center}
   #overlay.net .intro{display:none} #overlay{overflow:auto}
@@ -93,8 +113,9 @@
   <button class="btn ghost" id="bToMenu">MAIN MENU</button>
 </div>
 <div id="panel">
-  <h3>Settings <button class="btn ghost" id="bPanelClose" style="float:right;padding:2px 10px;font-size:12px;position:static">CLOSE</button></h3>
-  <label>Control <select id="selCtrl"><option value="motion">Motion (turn + nod)</option><option value="touch">Touch (drag back)</option></select></label>
+  <h3>SETTINGS <button id="bPanelClose">CLOSE</button></h3>
+  <button id="bCtrl">CONTROL: <b id="bCtrlTxt">MOTION</b></button>
+  <label style="display:none">Control <select id="selCtrl"><option value="motion">Motion (turn + nod)</option><option value="touch">Touch (drag back)</option></select></label>
   <label>Touch: drag for full power <span><input type="range" id="sTouchF" min="60" max="260" step="10"><b id="vTouchF"></b></span></label>
   <label>Sensor <select id="selSrc"><option value="split">Turn = power, nod = height</option><option value="move">Move (x / y)</option><option value="gyro">Gyro (turn)</option><option value="tilt">Gravity (tilt)</option></select></label>
   <label>Turn for full power <span><input type="range" id="sSpTurn" min="10" max="60" step="1"><b id="vSpTurn"></b></span></label>
@@ -117,11 +138,10 @@
   <label>Invert Y <input type="checkbox" id="cInvY"></label>
   <label>Aim preview <input type="checkbox" id="cPrev"></label>
   <label>Wind <input type="checkbox" id="cWind"></label>
-  <h3>Sensor</h3>
-  <div id="dbg" style="font-family:monospace;font-size:12px;line-height:1.5"></div>
+  <div id="dbg" style="display:none"></div>
 </div>
 <div id="overlay">
-  <h1>GORILLAS AMC</h1>
+  <h1><img src="logo.png" alt="GORILLAS AMC"></h1>
   <div id="menu" class="box">
     <button class="btn" id="mCont" style="display:none">CONTINUE</button>
     <button class="btn" id="mPlay">PLAY</button>
@@ -159,8 +179,8 @@
       <p><b>Bananas</b> (bottom): <b>Banana</b> plain · <b>Drill</b> bores through buildings · <b>Split</b> splits into three at the top · <b>Bounce</b> bounces three times, then stays there as a mine that hurts anyone who comes close · <b>Fire</b> leaves flames that burn for 2 turns · <b>Atom</b> huge blast (30%). Special bananas are earned every time your banana damages the opponent (a hit or a near hit), always in this order: Bounce → Split → Drill → Fire → Atom, then again from the start. They last for the whole match.</p>
       <p><b>Jump</b> ◀ ▶ (green): up to 2 hops before you throw, and 1 retreat hop in the 3 seconds after your banana lands — every turn. Some roofs are <b>rotten</b>, and you can't tell which until you land on one: it cracks. Hop off by the end of your next turn, or the storey collapses under you (20%). Jump back onto a cracked roof and it goes at once. Falling hurts too: 15% for every storey, so shooting the roof out from under someone pays off.</p>
       <p><b>New here?</b> Against the CPU or with 2 players on one phone the extras open one by one: a new one after every round you play (the ??? buttons). Online, and in God mode, everything is open.</p>
-      <p><b>Builds</b> (left column) take your whole turn and work once per round (they refill when a new round starts): <b>Floor+</b> / <b>Floor−</b> raise or lower the whole roof you stand on · <b>Shield</b> held in your hand: a banana that would hit you flies back flat toward the thrower (then the shield is gone); otherwise it soaks 30% blast damage (the drill goes through) · <b>Decoy</b> armed before your throw, doesn't take the turn: when your banana lands, a fake gorilla leaps out of you onto a neighbouring roof, like a real jump, and stays until your next turn.</p>
-      <p><b>Hidden tricks</b> (purple), your opponent doesn't see them: <b>Umbrella</b> catches the next banana (not the drill) · <b>Wind</b> twists the wind for their next throw, while their arrow still shows the old one · <b>Time</b> they get only 4 seconds next turn · <b>Invisible</b> armed before your throw, doesn't take the turn: when your banana lands you vanish for their next 2 turns (they only see you in their last 3 seconds), and you can hop around unseen.</p>
+      <p><b>Builds</b> (left column) take your whole turn and work once per round (they refill when a new round starts): <b>Floor+</b> / <b>Floor−</b> raise or lower the whole roof you stand on · <b>Shield</b> held in your hand: a banana that would hit you flies back flat toward the thrower (then the shield is gone); otherwise it soaks 30% blast damage (the drill goes through) · <b>Decoy</b> armed before your throw, doesn't take the turn: when your banana lands, a fake gorilla leaps out of you onto a neighbouring roof, like a real jump, while you vanish: they only see the decoy until your next turn (if they pop it, you show up again).</p>
+      <p><b>Hidden tricks</b> (purple), your opponent doesn't see them: <b>Umbrella</b> catches the next banana (not the drill) · <b>Wind</b> twists the wind for their next throw, while their arrow still shows the old one · <b>Time</b> they get only 4 seconds next turn · <b>Invisible</b> armed before your throw, doesn't take the turn: when your banana lands you vanish for their next 2 turns (they only see you in their last 2 seconds), and you can hop around unseen.</p>
       <p><b>God mode</b> (both players agree): everything unlimited.</p>
       <p><b>Damage:</b> direct hits, near misses, fire, falling. Buildings crumble — shoot the floor away and the gorilla falls.</p>
       <p style="opacity:.7">On a PC: press on the track and drag back like a slingshot.</p>
@@ -188,7 +208,7 @@
     <p id="joinStatus"></p>
     <button class="btn ghost" id="bBack2">BACK</button>
   </div>
-  <p style="font-size:11px;opacity:.45;margin-top:10px">build 32</p>
+  <p style="font-size:11px;opacity:.45;margin-top:10px">build 33</p>
 </div>
 <div id="unlockToast" style="position:fixed;left:50%;top:64px;transform:translateX(-50%);display:none;z-index:8;max-width:80vw;padding:8px 14px;border-radius:10px;background:rgba(10,14,28,.9);border:1px solid rgba(255,209,102,.6);color:#e8eef8;font:600 14px system-ui;text-align:center;pointer-events:none"></div>
 <div id="rpause" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(8,10,20,.6);z-index:7;color:#ffd166;font:700 26px system-ui;pointer-events:none;text-shadow:0 2px 8px #000"><span>paused</span></div>
@@ -201,7 +221,7 @@ const DEF={ver:10,ctrl:'motion',touchFull:130,snd:true,vol:0.7,turnTime:10,trMax
 let S=Object.assign({},DEF);
 try{const j=JSON.parse(localStorage.getItem('amc_settings')||'null'); if(j && j.ver===DEF.ver) Object.assign(S,j);}catch(e){}
 // game tuning is the same for every player and not adjustable (only control mode, sound, vibration etc. are personal)
-const LOCKED=['moveX','moveY','leak','turn','tilt','speed','tremble','trMax','turnTime','grav','smooth'];
+const LOCKED=['moveX','moveY','leak','turn','tilt','speed','tremble','trMax','turnTime','grav','smooth','touchFull','spTurn','spTilt','src','wind'];
 LOCKED.forEach(k=>S[k]=DEF[k]);
 function saveS(){try{localStorage.setItem('amc_settings',JSON.stringify(S));}catch(e){}}
 
@@ -1068,7 +1088,8 @@ function render(now){
     return {pose:'idle'};
   };
   // invisible: the other player doesn't see you until their last 3 seconds; you see yourself as a ghost
-  const hidden=k=>invis[k]>0 && !viewerIs(k) && (turn===k || turnClock>3), ghost=k=>invis[k]>0 && viewerIs(k);
+  const decoyOf=k=>decoy && decoy.p===k && !decoy.popped;
+  const hidden=k=>!viewerIs(k) && ((invis[k]>0 && (turn===k || turnClock>2)) || decoyOf(k)), ghost=k=>viewerIs(k) && (invis[k]>0 || decoyOf(k));
   for(const [k,ape] of [[0,monkey],[1,target]]){ if(!ape.alive || hidden(k)) continue;
     ctx.save(); if(ghost(k)) ctx.globalAlpha=.4;
     drawApe(ape.x+(sh===ape?jx:0), ape.y, Object.assign({t:T,dir:k?-1:1,pc:PCOL[k]},poseOf(ape,k))); ctx.restore(); }
@@ -1583,7 +1604,7 @@ const UNLOCK_STEPS=[['up','down'],['shield'],['umb'],['decoy'],['windm'],['timep
 const UNLOCK_TXT={up:'FLOOR+ / FLOOR−: raise your roof by a storey, or drop one',shield:'SHIELD: a banana that would hit you flies back at the thrower',
   umb:'UMBRELLA (hidden): catches the next banana thrown at you',decoy:'DECOY: a fake gorilla appears on another roof after your throw',
   windm:'WIND (hidden): the other player sees the old wind, the real one changes',timep:'TIME (hidden): the other player gets only 4 seconds',
-  invis:'INVISIBLE (hidden): after your throw you vanish until their last 3 seconds'};
+  invis:'INVISIBLE (hidden): after your throw you vanish for 2 turns'};
 let unlockN=0; try{ unlockN=+(localStorage.getItem('amc_unlock')||0)||0; }catch(e){}
 function isLocked(id){ if(GM==='online'||godMode) return false; const i=UNLOCK_STEPS.findIndex(st=>st.includes(id)); return i>=0 && i>=unlockN; }
 function unlockNext(){
@@ -1728,8 +1749,9 @@ function cpuSim(x,y,vx,vy,w,tx,ty){
 function cpuPlan(){
   const lvl=cpuLevel, from=handOf(target,-1);
   let tx=monkey.x, ty=monkey.y-APE_CY;
-  if(invis[0]>0 && seenAt[0]){ tx=seenAt[0].x; ty=seenAt[0].y-APE_CY; }          // can't see you: shoots where you were
-  if(decoy && decoy.p===0 && !decoy.popped && (invis[0]>0 || Math.random()<0.5)){ tx=decoy.x; ty=decoy.y-APE_CY; }   // falls for the decoy
+  if(invis[0]>0 && seenAt[0]){ tx=seenAt[0].x; ty=seenAt[0].y-APE_CY; }
+  if(decoy && decoy.p===0 && !decoy.popped){ tx=decoy.x; ty=decoy.y-APE_CY; }   // you vanished, only the decoy is there: it shoots the decoy          // can't see you: shoots where you were
+  if(decoy && decoy.p===0 && !decoy.popped && (invis[0]>0 || true)){ tx=decoy.x; ty=decoy.y-APE_CY; }   // falls for the decoy
   const wSeen=(windTrick&&windTrick.active&&windTrick.victim===1)?windTrick.shown:wind;
   const wEst=wSeen*Math.min(1,0.2+0.13*(lvl-1));                 // how well it reads the wind
   let best={score:1e9};
@@ -1856,12 +1878,15 @@ bindRange('sTrMax','trMax',v=>'×'+v);
 bindRange('sGrav','grav',v=>v);
 bindRange('sTurnT','turnTime',v=>v?v+' s':'off');
 bindRange('sSmooth','smooth',v=>v.toFixed(2));
-['sMoveX','sMoveY','sLeak','sTurn','sTilt','sSpeed','sTremble','sTrMax','sTurnT','sGrav','sSmooth'].forEach(id=>{ const l=document.getElementById(id).closest('label'); if(l) l.style.display='none'; });
+['sMoveX','sMoveY','sLeak','sTurn','sTilt','sSpeed','sTremble','sTrMax','sTurnT','sGrav','sSmooth','sTouchF','sSpTurn','sSpTilt','selSrc','cWind'].forEach(id=>{ const l=document.getElementById(id).closest('label'); if(l) l.style.display='none'; });
 bindChk('cSnd','snd'); bindRange('sVol','vol',v=>Math.round(v*100)+'%'); document.getElementById('sVol').addEventListener('input',()=>SND.setVol(S.vol));
 bindChk('cVib','vib'); bindChk('cInvX','invX'); bindChk('cInvY','invY'); bindChk('cPrev','prev');
 bindChk('cWind','wind',()=>{ wind=S.wind?Math.round((Math.random()*2-1)*120):0; streaks=[]; });
 function placeBtn(){ shootBtn.style.display='none'; }
-{ const el=document.getElementById('selCtrl'); el.value=S.ctrl; el.onchange=()=>{ S.ctrl=el.value; saveS(); placeBtn(); }; }
+{ const el=document.getElementById('selCtrl'), bt=document.getElementById('bCtrl'), tx=document.getElementById('bCtrlTxt');
+  const show=()=>{ tx.textContent=S.ctrl==='touch'?'TOUCH (DRAG BACK)':'MOTION (TURN + NOD)'; };
+  el.value=S.ctrl; el.onchange=()=>{ S.ctrl=el.value; saveS(); placeBtn(); show(); };
+  bt.onclick=()=>{ el.value=S.ctrl==='touch'?'motion':'touch'; el.onchange(); }; show(); }
 bindRange('sTouchF','touchFull',v=>v+' px');
 
 // sensors, sound, fullscreen: must start from a tap
